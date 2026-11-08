@@ -2,35 +2,155 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #f1f5f9;
-    background-color: #070b14;
-    -webkit-font-smoothing: antialiased;
+  :root {
+    --bg-dark: #080b12;
+    --surface-1: #0e1626;
+    --surface-2: #141f33;
+    --cyan-accent: #00e5ff;
+    --green-accent: #00f5a0;
+    --amber-accent: #ffb020;
+    --crimson-accent: #ff365d;
+    --text-primary: #e6edf6;
+    --text-muted: #8293aa;
   }
 
-  code, pre, kbd, samp {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #e6edf6;
+    background-color: #080b12;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, h4, .font-heading {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  code, pre, kbd, samp, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 
   :focus-visible {
-    outline: 2px solid #06b6d4;
+    outline: 2px solid #00e5ff;
     outline-offset: 2px;
   }
 }
 
-/* Custom subtle scrollbars */
+/* Cyberpunk Background Grid */
+.cyber-grid-bg {
+  background-image: 
+    linear-gradient(to right, rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.cyber-grid-dense {
+  background-image: 
+    linear-gradient(to right, rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Cyberpunk Card & Panel Aesthetics */
+.cyber-card {
+  background: rgba(14, 22, 38, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 229, 255, 0.14);
+  box-shadow: 0 4px 20px -2px rgba(4, 7, 14, 0.7);
+  position: relative;
+}
+
+.cyber-card-glow {
+  border-color: rgba(0, 229, 255, 0.35);
+  box-shadow: 0 0 25px -5px rgba(0, 229, 255, 0.12), 0 4px 20px -2px rgba(4, 7, 14, 0.8);
+}
+
+.cyber-card-crimson {
+  background: rgba(26, 12, 22, 0.85);
+  border-color: rgba(255, 54, 93, 0.3);
+  box-shadow: 0 0 20px -5px rgba(255, 54, 93, 0.12);
+}
+
+.cyber-card-emerald {
+  background: rgba(10, 26, 22, 0.85);
+  border-color: rgba(0, 245, 160, 0.3);
+  box-shadow: 0 0 20px -5px rgba(0, 245, 160, 0.12);
+}
+
+/* Corner Notch Decorators */
+.cyber-corner-tr {
+  position: relative;
+}
+.cyber-corner-tr::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid #00e5ff;
+  border-right: 2px solid #00e5ff;
+  pointer-events: none;
+}
+
+.cyber-corner-bl {
+  position: relative;
+}
+.cyber-corner-bl::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-bottom: 2px solid #00e5ff;
+  border-left: 2px solid #00e5ff;
+  pointer-events: none;
+}
+
+/* Text Glow Effects */
+.glow-text-cyan {
+  text-shadow: 0 0 12px rgba(0, 229, 255, 0.6);
+}
+
+.glow-text-crimson {
+  text-shadow: 0 0 12px rgba(255, 54, 93, 0.6);
+}
+
+.glow-text-green {
+  text-shadow: 0 0 12px rgba(0, 245, 160, 0.6);
+}
+
+/* Terminal Scanline overlay */
+.scanlines-overlay {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+}
+
+/* Custom Cyberpunk Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #070b14;
+  background: #080b12;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 3px;
+  background: #17263d;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 229, 255, 0.15);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #00e5ff44;
+  border-color: #00e5ff;
 }

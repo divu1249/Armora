@@ -19,7 +19,6 @@ import {
   Info,
 } from 'lucide-react';
 import { ScenarioDefinition } from '../../../server/scenarios.ts';
-import { Tooltip } from '../Tooltip.tsx';
 import { runAgentScenario } from '../../services/api.ts';
 import { Incident } from '../../../server/types.ts';
 
@@ -65,27 +64,29 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
   return (
     <div className="space-y-6">
       {/* Top Banner with Strict Honest Label */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="cyber-card cyber-corner-tr rounded p-5 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#00e5ff]/15 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <Split className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-sm font-semibold text-white">Side-by-Side Firewall Comparison</h2>
-              <span className="text-2xs font-mono text-cyan-300 bg-cyan-950 border border-cyan-850 px-2 py-0.5 rounded">
+              <Split className="w-5 h-5 text-[#00e5ff]" />
+              <h2 className="text-sm font-bold font-heading text-white uppercase tracking-wide">
+                Side-by-Side Dual-Posture Comparison
+              </h2>
+              <span className="text-3xs font-mono text-[#00f5a0] bg-[#00f5a0]/10 border border-[#00f5a0]/30 px-2 py-0.5 rounded">
                 [BUILT]
               </span>
-              <span className="text-2xs font-mono text-emerald-300 bg-emerald-950 border border-emerald-850 px-2 py-0.5 rounded">
+              <span className="text-3xs font-mono text-[#00e5ff] bg-[#00e5ff]/10 border border-[#00e5ff]/30 px-2 py-0.5 rounded">
                 [SEEDED]
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-[#8293aa] font-mono mt-1">
               Run the exact same attack scenario with identical prompt segments and tool payloads. Witness how the Action Gate deterministic credential boundary changes the outcome.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-amber-300 bg-amber-950/80 border border-amber-800 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-2xs font-mono text-[#ffb020] bg-[#ffb020]/10 border border-[#ffb020]/30 px-3 py-1.5 rounded flex items-center gap-1.5 shadow-[0_0_10px_rgba(255,176,32,0.15)]">
+              <AlertTriangle className="w-3.5 h-3.5 text-[#ffb020]" />
               Controlled demonstration using synthetic data
             </span>
           </div>
@@ -94,7 +95,7 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
         {/* Scenario Selector & Run CTA */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Choose Scenario:</span>
+            <span className="text-xs font-mono text-[#8293aa] uppercase tracking-wider">Choose Scenario:</span>
             <div className="flex flex-wrap gap-1.5">
               {scenarios.map((sc) => (
                 <button
@@ -105,10 +106,10 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
                     setWithoutIncident(null);
                     setWithIncident(null);
                   }}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors duration-150 border ${
+                  className={`px-3 py-1 rounded text-xs font-mono font-medium transition-all duration-150 border ${
                     sc.id === selectedScenarioId
-                      ? 'bg-cyan-950 border-cyan-500 text-cyan-300 font-bold'
-                      : 'bg-[#070b14] border-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-[#00e5ff]/10 border-[#00e5ff] text-[#00e5ff] font-bold shadow-[0_0_12px_rgba(0,229,255,0.25)]'
+                      : 'bg-[#090d18] border-[#00e5ff]/15 text-[#8293aa] hover:text-white'
                   }`}
                 >
                   {sc.title.split(':')[0]}
@@ -121,7 +122,7 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
             type="button"
             onClick={handleRunComparison}
             disabled={running}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs rounded-lg transition-all duration-150 shadow-md disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-[#00e5ff] to-[#00a8ff] hover:from-[#33ecff] hover:to-[#33b8ff] text-[#080b12] font-black font-mono text-xs rounded transition-all duration-150 shadow-[0_0_16px_rgba(0,229,255,0.4)] disabled:opacity-50 cursor-pointer active:scale-95 uppercase tracking-wider"
           >
             {running ? (
               <>
@@ -130,8 +131,8 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 fill-slate-950" />
-                Execute Side-by-Side Comparison
+                <Play className="w-4 h-4 fill-[#080b12]" />
+                Execute Dual Comparison
               </>
             )}
           </button>
@@ -140,14 +141,14 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
 
       {/* Selected Scenario Overview Card */}
       {activeScenario && (
-        <div className="bg-[#0b1329] border border-slate-800 rounded-lg p-4 text-xs space-y-2">
+        <div className="cyber-card p-4 rounded text-xs space-y-2 border border-[#00e5ff]/20">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-white">{activeScenario.title}</span>
-            <span className="font-mono text-2xs text-slate-400">Target Agent: {activeScenario.appName}</span>
+            <span className="font-bold font-heading text-white">{activeScenario.title}</span>
+            <span className="font-mono text-2xs text-[#00e5ff]">TARGET AGENT: {activeScenario.appName.toUpperCase()}</span>
           </div>
-          <p className="text-slate-300">{activeScenario.description}</p>
-          <div className="bg-[#070b14] p-2.5 rounded border border-slate-800/80 font-mono text-2xs text-slate-400">
-            <span className="text-amber-400 font-bold">Adversarial Vector: </span>
+          <p className="text-slate-300 font-sans">{activeScenario.description}</p>
+          <div className="bg-[#050810] p-2.5 rounded border border-[#00e5ff]/15 font-mono text-2xs text-[#8293aa] scanlines-overlay">
+            <span className="text-[#ffb020] font-bold">ADVERSARIAL VECTOR: </span>
             {(activeScenario.segments.find((s) => s.role === 'retrieved_doc')?.content || activeScenario.segments[0]?.content || '').slice(0, 180)}...
           </div>
         </div>
@@ -155,31 +156,33 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
 
       {/* Split-Screen Side-by-Side Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* LEFT COLUMN: WITHOUT FIREWALL */}
-        <div className="bg-[#0f172a] border border-rose-900/60 rounded-xl p-5 shadow-sm space-y-5">
-          <div className="flex items-center justify-between border-b border-rose-900/40 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-rose-950 border border-rose-800 flex items-center justify-center text-rose-400">
+        {/* LEFT COLUMN: WITHOUT FIREWALL (CRIMSON) */}
+        <div className="cyber-card cyber-card-crimson rounded p-5 space-y-5">
+          <div className="flex items-center justify-between border-b border-[#ff365d]/25 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded bg-[#ff365d]/10 border border-[#ff365d]/50 flex items-center justify-center text-[#ff365d] shadow-[0_0_12px_rgba(255,54,93,0.3)]">
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-rose-400">Without Firewall (OFF)</h3>
-                <p className="text-2xs text-slate-400">Standing Master Key Bypass Mode</p>
+                <h3 className="text-sm font-bold font-heading text-[#ff365d] uppercase tracking-wide">
+                  Without Firewall (OFF)
+                </h3>
+                <p className="text-3xs font-mono text-[#8293aa]">Standing Master Key Bypass Mode</p>
               </div>
             </div>
-            <span className="text-2xs font-mono text-rose-300 bg-rose-950 border border-rose-800 px-2 py-0.5 rounded font-bold">
+            <span className="text-3xs font-mono text-[#ff365d] bg-[#ff365d]/10 border border-[#ff365d]/40 px-2 py-0.5 rounded font-black tracking-wider">
               UNGUARDED
             </span>
           </div>
 
           {/* Step 1: Input Ingestion */}
-          <div className="p-3 bg-[#070b14] border border-slate-800 rounded-lg space-y-1">
-            <div className="flex items-center justify-between text-2xs text-slate-400 font-mono">
+          <div className="p-3 bg-[#090d18] border border-[#ff365d]/20 rounded space-y-1">
+            <div className="flex items-center justify-between text-2xs text-[#8293aa] font-mono">
               <span className="flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-slate-500" />
+                <Database className="w-3.5 h-3.5 text-[#8293aa]" />
                 Step 1: Input Ingestion
               </span>
-              <span className="text-rose-400">No Trust Labels</span>
+              <span className="text-[#ff365d] font-bold">No Trust Labels</span>
             </div>
             <p className="text-xs text-slate-300">
               Agent ingests untrusted candidate document or user query without provenance tagging.
@@ -187,13 +190,13 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
           </div>
 
           {/* Step 2: Agent Tool Invocation */}
-          <div className="p-3 bg-[#070b14] border border-slate-800 rounded-lg space-y-1">
-            <div className="flex items-center justify-between text-2xs text-slate-400 font-mono">
+          <div className="p-3 bg-[#090d18] border border-[#ff365d]/20 rounded space-y-1">
+            <div className="flex items-center justify-between text-2xs text-[#8293aa] font-mono">
               <span className="flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-slate-500" />
+                <Mail className="w-3.5 h-3.5 text-[#8293aa]" />
                 Step 2: Proposed Tool Action
               </span>
-              <span className="text-slate-400">{activeScenario.simulatedFooledToolCall?.tool || 'send_email'}</span>
+              <span className="text-slate-300 font-mono">{activeScenario.simulatedFooledToolCall?.tool || 'send_email'}</span>
             </div>
             <p className="text-xs text-slate-300">
               Fooled model executes injected instruction, calling sensitive tool with attacker-specified arguments.
@@ -201,79 +204,81 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
           </div>
 
           {/* Step 3: Enforcement Boundary (DIVERGENCE POINT) */}
-          <div className="p-3.5 bg-rose-950/40 border border-rose-800/80 rounded-lg space-y-2">
-            <div className="flex items-center justify-between text-2xs font-mono font-bold text-rose-300">
+          <div className="p-3.5 bg-[#150a10] border border-[#ff365d]/50 rounded space-y-2">
+            <div className="flex items-center justify-between text-2xs font-mono font-bold text-[#ff365d]">
               <span className="flex items-center gap-1.5">
-                <Unlock className="w-4 h-4 text-rose-400" />
+                <Unlock className="w-4 h-4 text-[#ff365d]" />
                 Step 3: Security Boundary
               </span>
               <span>NO GATE / MASTER KEY</span>
             </div>
-            <p className="text-xs text-rose-200 leading-relaxed">
+            <p className="text-xs text-[#ff365d] leading-relaxed">
               No Action Gate. Standing master credential is unconditionally passed to the protected tool server.
             </p>
-            <div className="font-mono text-2xs text-rose-300/80 bg-rose-950/80 p-2 rounded border border-rose-900">
+            <div className="font-mono text-3xs text-[#ff365d]/80 bg-black/60 p-2 rounded border border-[#ff365d]/30">
               Credential: MASTER_KEY_LIVE_PREMISES_BYPASS (Perpetual standing secret)
             </div>
           </div>
 
           {/* Step 4: Final Outcome */}
-          <div className="p-4 bg-rose-950/30 border border-rose-800 rounded-lg space-y-2">
-            <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
+          <div className="p-4 bg-[#150a10] border border-[#ff365d]/50 rounded space-y-2 shadow-[0_0_15px_rgba(255,54,93,0.15)]">
+            <div className="flex items-center gap-2 text-[#ff365d] font-bold font-mono text-xs glow-text-crimson">
               <XCircle className="w-4 h-4" />
               <span>RESULT: BREACH OCCURRED</span>
             </div>
-            <p className="text-xs text-slate-300">
+            <p className="text-xs text-slate-300 font-sans">
               {withoutIncident
                 ? withoutIncident.withoutFirewallOutcome?.impact || 'Tool executed directly. Confidential data exfiltrated to external recipient.'
                 : activeScenario.withoutFirewallOutcome?.impact || 'Tool executed directly with standing master key.'}
             </p>
-            <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-rose-900/50">
-              <span className="text-slate-400">Data Left Premises:</span>
-              <span className="text-rose-400 font-bold">YES (CRITICAL LEAK)</span>
+            <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-[#ff365d]/30">
+              <span className="text-[#8293aa]">Data Left Premises:</span>
+              <span className="text-[#ff365d] font-black">YES (CRITICAL LEAK)</span>
             </div>
           </div>
         </div>
 
-        {/* RIGHT COLUMN: WITH FIREWALL */}
-        <div className="bg-[#0f172a] border border-cyan-800/60 rounded-xl p-5 shadow-sm space-y-5">
-          <div className="flex items-center justify-between border-b border-cyan-800/40 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-cyan-950 border border-cyan-800 flex items-center justify-center text-cyan-400">
+        {/* RIGHT COLUMN: WITH FIREWALL (CYAN) */}
+        <div className="cyber-card cyber-card-glow rounded p-5 space-y-5">
+          <div className="flex items-center justify-between border-b border-[#00e5ff]/25 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded bg-[#00e5ff]/10 border border-[#00e5ff]/50 flex items-center justify-center text-[#00e5ff] shadow-[0_0_12px_rgba(0,229,255,0.3)]">
                 <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-cyan-300">With LLM Firewall (ENFORCE)</h3>
-                <p className="text-2xs text-slate-400">Action Gate &amp; Credential Broker Mode</p>
+                <h3 className="text-sm font-bold font-heading text-[#00e5ff] uppercase tracking-wide">
+                  With LLM Firewall (ENFORCE)
+                </h3>
+                <p className="text-3xs font-mono text-[#8293aa]">Action Gate &amp; Credential Broker Mode</p>
               </div>
             </div>
-            <span className="text-2xs font-mono text-cyan-300 bg-cyan-950 border border-cyan-850 px-2 py-0.5 rounded font-bold">
+            <span className="text-3xs font-mono text-[#00e5ff] bg-[#00e5ff]/10 border border-[#00e5ff]/40 px-2 py-0.5 rounded font-black tracking-wider">
               PROTECTED
             </span>
           </div>
 
           {/* Step 1: Input Ingestion with Trust Provenance */}
-          <div className="p-3 bg-[#070b14] border border-slate-800 rounded-lg space-y-1">
-            <div className="flex items-center justify-between text-2xs text-slate-400 font-mono">
+          <div className="p-3 bg-[#090d18] border border-[#00e5ff]/20 rounded space-y-1">
+            <div className="flex items-center justify-between text-2xs text-[#8293aa] font-mono">
               <span className="flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-cyan-400" />
+                <Database className="w-3.5 h-3.5 text-[#00e5ff]" />
                 Step 1: Tag &amp; Normalize
               </span>
-              <span className="text-cyan-400 font-bold">RETRIEVED_DOC (Untrusted)</span>
+              <span className="text-[#00e5ff] font-bold">RETRIEVED_DOC (Untrusted)</span>
             </div>
             <p className="text-xs text-slate-300">
-              NFKC normalization strips hidden zero-width tokens. Document segment is explicitly tagged <span className="font-mono text-cyan-300">RETRIEVED_DOC</span>.
+              NFKC normalization strips hidden zero-width tokens. Document segment is explicitly tagged <span className="font-mono text-[#00e5ff]">RETRIEVED_DOC</span>.
             </p>
           </div>
 
           {/* Step 2: Detection Signals */}
-          <div className="p-3 bg-[#070b14] border border-slate-800 rounded-lg space-y-1">
-            <div className="flex items-center justify-between text-2xs text-slate-400 font-mono">
+          <div className="p-3 bg-[#090d18] border border-[#00e5ff]/20 rounded space-y-1">
+            <div className="flex items-center justify-between text-2xs text-[#8293aa] font-mono">
               <span className="flex items-center gap-1.5">
-                <FileSearch className="w-3.5 h-3.5 text-cyan-400" />
+                <FileSearch className="w-3.5 h-3.5 text-[#00e5ff]" />
                 Step 2: Multi-Signal Detectors
               </span>
-              <span className="text-amber-400 font-bold">Signals Dispatched</span>
+              <span className="text-[#ffb020] font-bold">Signals Dispatched</span>
             </div>
             <p className="text-xs text-slate-300">
               Verhoeff Aadhaar, PAN regex, and injection heuristics flag risk signals to the Action Gate.
@@ -281,34 +286,34 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
           </div>
 
           {/* Step 3: Enforcement Boundary (DIVERGENCE POINT) */}
-          <div className="p-3.5 bg-cyan-950/40 border border-cyan-800/80 rounded-lg space-y-2">
-            <div className="flex items-center justify-between text-2xs font-mono font-bold text-cyan-300">
+          <div className="p-3.5 bg-[#00e5ff]/10 border border-[#00e5ff]/40 rounded space-y-2">
+            <div className="flex items-center justify-between text-2xs font-mono font-bold text-[#00e5ff]">
               <span className="flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-cyan-400" />
+                <Lock className="w-4 h-4 text-[#00e5ff]" />
                 Step 3: Action Gate &amp; Broker
               </span>
               <span>DETERMINISTIC GATE</span>
             </div>
-            <p className="text-xs text-cyan-200 leading-relaxed">
+            <p className="text-xs text-[#00e5ff] leading-relaxed">
               Trifecta Guard (R2) blocks the tool call: untrusted content reading private data cannot authorize external communication.
             </p>
-            <div className="font-mono text-2xs text-cyan-300/80 bg-cyan-950/80 p-2 rounded border border-cyan-800">
+            <div className="font-mono text-3xs text-[#00e5ff]/80 bg-black/60 p-2 rounded border border-[#00e5ff]/30">
               Scoped Token: REFUSED (Signature withheld; standing keys prohibited)
             </div>
           </div>
 
           {/* Step 4: Final Outcome */}
-          <div className="p-4 bg-emerald-950/30 border border-emerald-800 rounded-lg space-y-2">
-            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+          <div className="p-4 bg-[#00f5a0]/10 border border-[#00f5a0]/40 rounded space-y-2 shadow-[0_0_15px_rgba(0,245,160,0.15)]">
+            <div className="flex items-center gap-2 text-[#00f5a0] font-bold font-mono text-xs glow-text-green">
               <CheckCircle2 className="w-4 h-4" />
               <span>RESULT: ATTACK NEUTRALIZED</span>
             </div>
-            <p className="text-xs text-slate-300">
+            <p className="text-xs text-slate-300 font-sans">
               Tool call intercepted at boundary. Zero bytes exfiltrated. Immutable audit entry appended to SHA-256 hash chain.
             </p>
-            <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-emerald-900/50">
-              <span className="text-slate-400">Data Left Premises:</span>
-              <span className="text-emerald-400 font-bold">NO (0 BYTES LEAKED)</span>
+            <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-[#00f5a0]/30">
+              <span className="text-[#8293aa]">Data Left Premises:</span>
+              <span className="text-[#00f5a0] font-black">NO (0 BYTES LEAKED)</span>
             </div>
           </div>
         </div>

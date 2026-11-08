@@ -51,31 +51,33 @@ export const QuickScenarioRunnerModal: React.FC<QuickScenarioRunnerModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 text-xs shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="cyber-card cyber-corner-tr max-w-lg w-full p-6 space-y-4 text-xs rounded border border-[#00e5ff]/35 shadow-[0_0_35px_rgba(0,0,0,0.8)]">
+        <div className="flex items-center justify-between border-b border-[#00e5ff]/20 pb-3">
           <div className="flex items-center gap-2">
-            <Play className="w-4 h-4 text-cyan-400 fill-current" />
-            <h3 className="text-sm font-bold text-white">Execute Attack Scenario Simulator</h3>
+            <Play className="w-4 h-4 text-[#00e5ff] fill-[#00e5ff]" />
+            <h3 className="text-sm font-bold font-heading text-white uppercase tracking-wider">
+              Execute Attack Scenario Simulator
+            </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white"
+            className="text-[#8293aa] hover:text-[#00e5ff] transition-colors"
           >
-            <X className="w-4 h-4 text-white" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-2xs font-semibold text-slate-400 mb-1 uppercase">
-              Select Test Scenario:
+            <label className="block text-3xs font-mono font-bold text-[#8293aa] mb-1 uppercase tracking-wider">
+              // Select Target Attack Scenario:
             </label>
             <select
               value={selectedScenarioId}
               onChange={(e) => setSelectedScenarioId(e.target.value)}
-              className="w-full bg-[#0b1329] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+              className="w-full bg-[#050810] border border-[#00e5ff]/30 rounded p-2 text-xs font-mono text-white focus:outline-none focus:border-[#00e5ff] focus:ring-1 focus:ring-[#00e5ff]/40 shadow-[0_0_10px_rgba(0,229,255,0.08)] cursor-pointer"
             >
               {scenarios.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -84,15 +86,15 @@ export const QuickScenarioRunnerModal: React.FC<QuickScenarioRunnerModalProps> =
               ))}
             </select>
             {activeScenario && (
-              <p className="text-2xs text-slate-400 mt-1 leading-relaxed">
+              <p className="text-2xs text-[#8293aa] font-sans mt-1.5 leading-relaxed">
                 {activeScenario.description}
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-2xs font-semibold text-slate-400 mb-1 uppercase">
-              Action Gate Enforcement Mode:
+            <label className="block text-3xs font-mono font-bold text-[#8293aa] mb-1 uppercase tracking-wider">
+              // Action Gate Enforcement Mode:
             </label>
             <div className="grid grid-cols-3 gap-2">
               {(['enforce', 'shadow', 'off'] as FirewallMode[]).map((m) => (
@@ -100,14 +102,14 @@ export const QuickScenarioRunnerModal: React.FC<QuickScenarioRunnerModalProps> =
                   key={m}
                   type="button"
                   onClick={() => setMode(m)}
-                  className={`py-1.5 rounded-lg text-xs font-bold uppercase transition-colors border ${
+                  className={`py-1.5 rounded text-xs font-black font-mono uppercase transition-all border ${
                     mode === m
                       ? m === 'enforce'
-                        ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                        ? 'bg-[#00e5ff] text-[#080b12] border-[#00e5ff] shadow-[0_0_12px_rgba(0,229,255,0.6)]'
                         : m === 'shadow'
-                        ? 'bg-amber-500 text-slate-950 border-amber-400'
-                        : 'bg-rose-500 text-white border-rose-400'
-                      : 'bg-[#0b1329] border-slate-800 text-slate-400 hover:text-white'
+                        ? 'bg-[#ffb020] text-[#080b12] border-[#ffb020] shadow-[0_0_12px_rgba(255,176,32,0.6)]'
+                        : 'bg-[#ff365d] text-white border-[#ff365d] shadow-[0_0_12px_rgba(255,54,93,0.6)]'
+                      : 'bg-[#090d18] border-[#00e5ff]/15 text-[#8293aa] hover:text-white'
                   }`}
                 >
                   {m}
@@ -117,48 +119,48 @@ export const QuickScenarioRunnerModal: React.FC<QuickScenarioRunnerModalProps> =
           </div>
 
           <div>
-            <label className="block text-2xs font-semibold text-slate-400 mb-1 uppercase">
-              Agent Model Driver:
+            <label className="block text-3xs font-mono font-bold text-[#8293aa] mb-1 uppercase tracking-wider">
+              // Agent Model Driver:
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setLlmMode('mock')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors border ${
+                className={`py-2 px-2.5 rounded text-xs font-mono font-semibold transition-all border ${
                   llmMode === 'mock'
-                    ? 'bg-cyan-950 border-cyan-500 text-cyan-300'
-                    : 'bg-[#0b1329] border-slate-800 text-slate-400 hover:text-white'
+                    ? 'bg-[#00e5ff]/10 border-[#00e5ff] text-[#00e5ff] shadow-[0_0_10px_rgba(0,229,255,0.2)]'
+                    : 'bg-[#090d18] border-[#00e5ff]/15 text-[#8293aa] hover:text-white'
                 }`}
               >
-                Simulated Fooled Agent <span className="text-2xs font-mono font-normal">[BUILT]</span>
+                Simulated Fooled Agent <span className="text-3xs font-mono text-[#00f5a0] block mt-0.5">[BUILT]</span>
               </button>
               <button
                 type="button"
                 onClick={() => setLlmMode('gemini')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-colors border ${
+                className={`py-2 px-2.5 rounded text-xs font-mono font-semibold transition-all border ${
                   llmMode === 'gemini'
-                    ? 'bg-cyan-950 border-cyan-500 text-cyan-300'
-                    : 'bg-[#0b1329] border-slate-800 text-slate-400 hover:text-white'
+                    ? 'bg-[#00e5ff]/10 border-[#00e5ff] text-[#00e5ff] shadow-[0_0_10px_rgba(0,229,255,0.2)]'
+                    : 'bg-[#090d18] border-[#00e5ff]/15 text-[#8293aa] hover:text-white'
                 }`}
               >
-                Gemini 3.8 Flash <span className="text-2xs font-mono font-normal">[PROTOTYPE]</span>
+                Gemini 3.8 Flash <span className="text-3xs font-mono text-[#ffb020] block mt-0.5">[PROTOTYPE]</span>
               </button>
             </div>
           </div>
 
           {error && (
-            <div className="p-3 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-lg text-xs flex items-center gap-2">
+            <div className="p-3 bg-[#150a10] border border-[#ff365d]/50 text-[#ff365d] rounded text-xs font-mono flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+        <div className="flex justify-end gap-2.5 pt-3 border-t border-[#00e5ff]/15">
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+            className="px-3.5 py-1.5 rounded bg-[#090d18] hover:bg-[#141f33] text-[#8293aa] hover:text-white text-xs font-mono font-semibold border border-[#00e5ff]/15 transition-colors"
           >
             Cancel
           </button>
@@ -166,9 +168,9 @@ export const QuickScenarioRunnerModal: React.FC<QuickScenarioRunnerModalProps> =
             type="button"
             disabled={loading}
             onClick={handleExecute}
-            className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition-colors flex items-center gap-1.5"
+            className="px-4 py-1.5 rounded bg-gradient-to-r from-[#00e5ff] to-[#00a8ff] hover:from-[#33ecff] hover:to-[#33b8ff] text-[#080b12] text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(0,229,255,0.4)] active:scale-95 disabled:opacity-50 cursor-pointer"
           >
-            <Play className="w-3.5 h-3.5 fill-current text-slate-950" />
+            <Play className="w-3.5 h-3.5 fill-[#080b12]" />
             <span>{loading ? 'Evaluating Gate...' : 'Run Scenario'}</span>
           </button>
         </div>

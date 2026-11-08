@@ -81,23 +81,25 @@ export const AuditPage: React.FC = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `llm_firewall_audit_chain_${Date.now()}.json`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-4">
+      <div className="cyber-card cyber-corner-tr rounded p-5 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#00e5ff]/15 pb-4 mb-2">
           <div>
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Link2 className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-bold font-heading text-white uppercase tracking-wide flex items-center gap-2">
+              <Link2 className="w-4 h-4 text-[#00e5ff]" />
               Cryptographic Audit Hash Chain
-              <span className="text-2xs font-mono text-cyan-300 bg-cyan-950 border border-cyan-850 px-2 py-0.5 rounded">
-                [SHA-256 Append-Only]
+              <span className="text-3xs font-mono text-[#00f5a0] bg-[#00f5a0]/10 border border-[#00f5a0]/30 px-2 py-0.5 rounded">
+                [SHA-256 APPEND-ONLY]
               </span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-[#8293aa] font-mono mt-0.5">
               Tamper-evident ledger linking decisions: <code>Hash_n = SHA-256(Hash_{'{n-1}'} + canonical_JSON)</code>.
             </p>
           </div>
@@ -107,34 +109,34 @@ export const AuditPage: React.FC = () => {
               type="button"
               disabled={loading}
               onClick={handleVerify}
-              className="px-3.5 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold rounded-lg text-xs shadow-sm transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-gradient-to-r from-[#00e5ff] to-[#00a8ff] hover:from-[#33ecff] hover:to-[#33b8ff] text-[#080b12] font-black font-mono rounded text-xs shadow-[0_0_12px_rgba(0,229,255,0.4)] transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-slate-950" />
+              <ShieldCheck className="w-3.5 h-3.5 text-[#080b12]" />
               <span>Verify Chain</span>
             </button>
             <button
               type="button"
               disabled={loading}
               onClick={handleTamper}
-              className="px-3.5 py-1.5 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-[#ff365d]/10 hover:bg-[#ff365d]/20 border border-[#ff365d]/40 text-[#ff365d] font-mono font-semibold rounded text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <Flame className="w-3.5 h-3.5 text-rose-400" />
+              <Flame className="w-3.5 h-3.5 text-[#ff365d]" />
               <span>Simulate Tampering</span>
             </button>
             <button
               type="button"
               disabled={loading}
               onClick={handleExportJson}
-              className="px-3.5 py-1.5 bg-[#0b1329] hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-[#090d18] hover:bg-[#141f33] border border-[#00e5ff]/20 text-slate-200 font-mono font-semibold rounded text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-white" />
+              <Download className="w-3.5 h-3.5 text-[#00e5ff]" />
               <span>Export JSON</span>
             </button>
             <button
               type="button"
               disabled={loading}
               onClick={handleReset}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1"
+              className="px-3 py-1.5 bg-[#090d18] hover:bg-[#141f33] text-[#8293aa] hover:text-white border border-[#00e5ff]/15 rounded text-xs font-mono transition-colors flex items-center gap-1 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
@@ -143,20 +145,20 @@ export const AuditPage: React.FC = () => {
         </div>
 
         {/* Roadmap Disclaimer Notice */}
-        <div className="p-3 bg-purple-950/40 border border-purple-800/60 text-purple-200 rounded-lg text-xs flex items-start gap-2.5 mb-4">
-          <Info className="w-4 h-4 text-purple-400 mt-0.5 shrink-0" />
+        <div className="p-3 bg-[#a855f7]/10 border border-[#a855f7]/30 text-[#e6edf6] rounded text-xs font-sans flex items-start gap-2.5 mb-4">
+          <Info className="w-4 h-4 text-[#a855f7] mt-0.5 shrink-0" />
           <div className="leading-relaxed">
             <strong className="text-white">Tamper Evidence &amp; Tail Truncation Note: </strong>
             Internal verification mathematically proves sequential continuity and detects any retroactive block modification.
-            <span className="text-purple-300 ml-1">
-              Note: Tail truncation (dropping trailing blocks) is not detectable without an external witness anchor or public transparency log <span className="font-mono text-2xs font-semibold">[ROADMAP]</span>.
+            <span className="text-[#c084fc] ml-1">
+              Note: Tail truncation (dropping trailing blocks) is not detectable without an external witness anchor or public transparency log <span className="font-mono text-3xs font-semibold">[ROADMAP]</span>.
             </span>
           </div>
         </div>
 
         {notice && (
-          <div className="p-3 bg-blue-950/60 border border-blue-800 text-blue-200 rounded-lg text-xs flex items-center gap-2 mb-4">
-            <Info className="w-4 h-4 text-blue-400 shrink-0" />
+          <div className="p-3 bg-[#00e5ff]/10 border border-[#00e5ff]/30 text-[#00e5ff] font-mono rounded text-xs flex items-center gap-2 mb-4">
+            <Info className="w-4 h-4 text-[#00e5ff] shrink-0" />
             <span>{notice}</span>
           </div>
         )}
@@ -164,28 +166,28 @@ export const AuditPage: React.FC = () => {
         {/* Verification Report Banner */}
         {report && (
           <div
-            className={`p-4 rounded-xl border text-xs mb-4 ${
+            className={`p-4 rounded border text-xs font-mono mb-4 ${
               report.valid
-                ? 'bg-emerald-950/40 border-emerald-800 text-emerald-200'
-                : 'bg-rose-950/50 border-rose-800 text-rose-200'
+                ? 'bg-[#00f5a0]/10 border-[#00f5a0]/40 text-[#00f5a0]'
+                : 'bg-[#ff365d]/10 border-[#ff365d]/40 text-[#ff365d]'
             }`}
           >
             <div className="flex items-center gap-2 font-bold uppercase text-xs">
               {report.valid ? (
                 <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-[#00f5a0]" />
                   <span>Chain Verified: 100% Cryptographic Continuity ({report.totalEntries} Blocks)</span>
                 </>
               ) : (
                 <>
-                  <AlertTriangle className="w-4 h-4 text-rose-400" />
+                  <AlertTriangle className="w-4 h-4 text-[#ff365d]" />
                   <span>TAMPER DETECTED: Hash Mismatch Pinpointed at Block #{report.tamperedEntry?.seq}</span>
                 </>
               )}
             </div>
 
             {!report.valid && report.tamperedEntry && (
-              <div className="mt-2 text-2xs font-mono bg-[#0b1329] p-3 rounded-lg border border-rose-800/80 text-slate-200 space-y-1">
+              <div className="mt-2 text-2xs font-mono bg-[#050810] p-3 rounded border border-[#ff365d]/40 text-slate-200 space-y-1">
                 <div>Broken Block Sequence: #{report.tamperedEntry.seq}</div>
                 <div>Expected Hash: {report.tamperedEntry.expectedHash}</div>
                 <div>Actual Hash:   {report.tamperedEntry.actualHash}</div>
@@ -197,10 +199,10 @@ export const AuditPage: React.FC = () => {
       </div>
 
       {/* Sequential Chain Table */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-sm space-y-3 font-mono">
-        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center justify-between font-sans">
+      <div className="cyber-card rounded p-5 space-y-3 font-mono">
+        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center justify-between font-heading">
           <span>Sequential Cryptographic Blocks ({entries.length} Total)</span>
-          <span className="text-2xs font-mono text-slate-500 font-normal">Genesis: 00000000...</span>
+          <span className="text-3xs font-mono text-[#8293aa] font-normal">Genesis: 00000000...</span>
         </h4>
 
         <div className="space-y-3 text-xs">
@@ -209,41 +211,41 @@ export const AuditPage: React.FC = () => {
             return (
               <div
                 key={entry.seq}
-                className={`p-3.5 rounded-lg border transition-colors ${
+                className={`p-3.5 rounded border transition-colors ${
                   isTampered
-                    ? 'bg-rose-950/40 border-rose-600 ring-1 ring-rose-500'
-                    : 'bg-[#0b1329] border-slate-800'
+                    ? 'bg-[#150a10] border-[#ff365d] ring-1 ring-[#ff365d]'
+                    : 'bg-[#090d18] border-[#00e5ff]/15'
                 }`}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2 mb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#00e5ff]/10 pb-2 mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-cyan-300 bg-cyan-950 border border-cyan-800 px-2 py-0.5 rounded text-2xs">
+                    <span className="font-bold text-[#00e5ff] bg-[#00e5ff]/10 border border-[#00e5ff]/30 px-2 py-0.5 rounded text-2xs">
                       Block #{entry.seq}
                     </span>
-                    <span className="font-sans font-semibold text-white">{entry.type}</span>
+                    <span className="font-heading font-semibold text-white">{entry.type}</span>
                     {isTampered && (
-                      <span className="text-2xs font-bold bg-rose-600 text-white px-2 py-0.5 rounded">
+                      <span className="text-3xs font-black bg-[#ff365d] text-white px-2 py-0.5 rounded">
                         TAMPERED DATA
                       </span>
                     )}
                   </div>
-                  <div className="text-2xs text-slate-500">
+                  <div className="text-3xs text-[#8293aa]">
                     {entry.ts} · Session: {entry.sessionId.substring(0, 16)}...
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-2xs mb-2">
                   <div>
-                    <span className="text-slate-500">prevHash: </span>
+                    <span className="text-[#8293aa]">prevHash: </span>
                     <span className="text-slate-400">{entry.prevHash.substring(0, 28)}...</span>
                   </div>
                   <div>
-                    <span className="text-slate-500">hash: </span>
-                    <span className="text-cyan-300 font-semibold">{entry.hash.substring(0, 28)}...</span>
+                    <span className="text-[#8293aa]">hash: </span>
+                    <span className="text-[#00e5ff] font-semibold">{entry.hash.substring(0, 28)}...</span>
                   </div>
                 </div>
 
-                <div className="bg-[#0f172a] p-2.5 rounded border border-slate-800/80 text-2xs text-slate-300 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                <div className="bg-[#050810] p-2.5 rounded border border-[#00e5ff]/10 text-2xs text-slate-300 whitespace-pre-wrap max-h-24 overflow-y-auto scanlines-overlay">
                   {JSON.stringify(entry.data, null, 2)}
                 </div>
               </div>
