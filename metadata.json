@@ -1,0 +1,6 @@
+{
+  "name": "LLM Firewall — Agent Security Gateway & Action Gate",
+  "description": "Deterministic action gate, scoped credential broker, and policy engine protecting AI agents from prompt injection and sensitive data exfiltration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
