@@ -1,10 +1,16 @@
+import crypto from 'node:crypto';
 import { ToolCall, ToolResult } from './types.ts';
-import { credentialBroker } from './credentialBroker.ts';
+import { tokenVerifier, TokenVerifier, TOKEN_TTL_SECONDS } from './credentialBroker.ts';
+import { validateToolArgs } from './toolSchemas.ts';
+import { analyzeRecipients } from './emailRecipients.ts';
+import { LEGACY_LABEL } from './legacyStandingKeyDemo.ts';
 
 export interface OutboxEmail {
   id: string;
   timestamp: string;
   to: string;
+  cc?: string[];
+  bcc?: string[];
   subject: string;
   body: string;
   credentialType: 'scoped_broker_token' | 'standing_master_key';
@@ -47,7 +53,7 @@ export class ProtectedToolServer {
   private candidates: CandidateRecord[] = [];
   private orders: OrderRecord[] = [];
 
-  constructor() {
+  constructor(private verifier: TokenVerifier) {
     this.seedData();
   }
 
@@ -101,41 +107,62 @@ export class ProtectedToolServer {
   }
 
   /**
-   * Executes a tool under cryptographic credential verification.
+   * Real execution path. Requires a broker-issued token that is bound to exactly this tool,
+   * session and argument set. There is no master-key branch and no caller-supplied bypass flag.
+   * Arguments are validated again here (defence in depth, independent of the gate).
    */
-  public executeTool(
-    toolCall: ToolCall,
-    credential: string,
-    isFirewallOff: boolean
-  ): ToolResult {
-    // 1. Verify credentials at boundary
-    const verification = credentialBroker.verifyCredentials(
-      credential,
-      toolCall.tool,
-      toolCall.args,
-      isFirewallOff
-    );
+  public executeTool(request: { toolCall: ToolCall; credential: string; sessionId: string }): ToolResult {
+    const { toolCall, credential, sessionId } = request;
+    const reject = (error: string): ToolResult => ({
+      success: false,
+      error: `Protected Tool Server Rejected Execution: ${error}`,
+      executedWith: 'scoped_broker_token',
+      credentialInfo: 'Broker token invalid',
+    });
 
-    if (!verification.valid) {
+    const v = validateToolArgs(toolCall.tool, toolCall.args);
+    if (!v.ok) return reject(v.error);
+
+    const verification = this.verifier.verify(credential, { tool: toolCall.tool, sessionId, args: v.args });
+    if (!verification.valid) return reject(verification.error ?? 'verification failed');
+
+    const claims = verification.claims!;
+    const credentialInfo = `Scoped Broker Token (kid-signed Ed25519, JTI: ${claims.jti.substring(0, 14)}..., TTL: ${TOKEN_TTL_SECONDS}s${
+      claims.approvalId ? `, approval: ${claims.approvalId}` : ''
+    })`;
+    return this.dispatch(toolCall.tool, v.args, 'scoped_broker_token', credentialInfo);
+  }
+
+  /**
+   * LEGACY SIMULATION ONLY (firewall = OFF scenario). Called solely by LegacyStandingKeyDemo,
+   * which supplies its own key verifier. Never used for real executions.
+   */
+  public executeLegacySimulation(toolCall: ToolCall, presentedKey: string, keyVerifier: (k: string) => boolean): ToolResult {
+    const v = validateToolArgs(toolCall.tool, toolCall.args);
+    if (!v.ok || !keyVerifier(presentedKey)) {
       return {
         success: false,
-        error: `Protected Tool Server Rejected Execution: ${verification.error}`,
-        executedWith: isFirewallOff ? 'standing_master_key' : 'scoped_broker_token',
-        credentialInfo: isFirewallOff ? 'Master key rejected' : 'Broker token invalid',
+        error: `Legacy simulation rejected: ${v.ok ? 'key mismatch' : v.error}`,
+        executedWith: 'standing_master_key',
+        credentialInfo: LEGACY_LABEL,
+        simulation: LEGACY_LABEL,
       };
     }
+    const r = this.dispatch(toolCall.tool, v.args, 'standing_master_key', `${LEGACY_LABEL}: standing key (unscoped, no expiry, no argument binding)`);
+    return { ...r, simulation: LEGACY_LABEL };
+  }
 
-    const executedWith = verification.isMasterKey ? 'standing_master_key' : 'scoped_broker_token';
-    const credentialInfo = verification.isMasterKey
-      ? 'Standing Master Key (Firewall OFF - Unscoped & Unrestricted)'
-      : `Scoped Broker Token (JTI: ${verification.claims?.jti.substring(0, 14)}..., TTL: 60s)`;
-
-    // 2. Dispatch to specific protected tools
-    switch (toolCall.tool) {
+  private dispatch(
+    tool: string,
+    args: Record<string, unknown>,
+    executedWith: ToolResult['executedWith'],
+    credentialInfo: string
+  ): ToolResult {
+    switch (tool) {
       case 'read_candidate_files': {
-        const candidateId = String(toolCall.args.candidateId || toolCall.args.id || '');
+        const candidateId = args.candidateId as string | undefined;
         if (candidateId) {
-          const match = this.candidates.find((c) => c.id === candidateId || c.name.toLowerCase().includes(candidateId.toLowerCase()));
+          const match = this.candidates.find((c) => c.id === candidateId);
           return {
             success: true,
             data: match || { error: 'Candidate not found', available: this.candidates.map((c) => c.id) },
@@ -143,39 +170,33 @@ export class ProtectedToolServer {
             credentialInfo,
           };
         }
-        return {
-          success: true,
-          data: {
-            candidates: this.candidates,
-            totalRecords: this.candidates.length,
-          },
-          executedWith,
-          credentialInfo,
-        };
+        return { success: true, data: { candidates: this.candidates, totalRecords: this.candidates.length }, executedWith, credentialInfo };
       }
 
       case 'send_email': {
-        const to = String(toolCall.args.to || toolCall.args.recipient || 'unknown@example.com');
-        const subject = String(toolCall.args.subject || 'Automated Agent Message');
-        const body = String(toolCall.args.body || toolCall.args.content || '');
-
+        const toList = analyzeRecipients({ to: args.to }).addresses;
+        const ccList = args.cc === undefined ? undefined : analyzeRecipients({ to: args.cc }).addresses;
+        const bccList = args.bcc === undefined ? undefined : analyzeRecipients({ to: args.bcc }).addresses;
+        const body = String(args.body ?? '');
         const emailRecord: OutboxEmail = {
-          id: `outbox_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          id: `outbox_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
           timestamp: new Date().toISOString(),
-          to,
-          subject,
+          to: toList.join(', ') || String(args.to),
+          ...(ccList ? { cc: ccList } : {}),
+          ...(bccList ? { bcc: bccList } : {}),
+          subject: String(args.subject),
           body,
           credentialType: executedWith,
         };
-
         this.outbox.push(emailRecord);
-
         return {
           success: true,
           data: {
             messageId: emailRecord.id,
             status: 'TRANSMITTED_TO_OUTBOX',
-            recipient: to,
+            recipient: emailRecord.to,
+            cc: ccList,
+            bcc: bccList,
             bytesSent: body.length,
           },
           executedWith,
@@ -184,29 +205,21 @@ export class ProtectedToolServer {
       }
 
       case 'update_candidate_status': {
-        const candidateId = String(toolCall.args.candidateId || toolCall.args.id || 'CAND_101');
-        const newStatus = String(toolCall.args.status || 'STATUS_UPDATED');
-        const candidate = this.candidates.find((c) => c.id === candidateId);
-        if (candidate) {
-          candidate.status = newStatus;
-          return {
-            success: true,
-            data: { candidateId, newStatus, updated: true },
-            executedWith,
-            credentialInfo,
-          };
+        const candidate = this.candidates.find((c) => c.id === args.candidateId);
+        if (!candidate) {
+          return { success: false, error: `Candidate ${String(args.candidateId)} not found`, executedWith, credentialInfo };
         }
+        candidate.status = String(args.status);
         return {
           success: true,
-          data: { candidateId, status: newStatus, note: 'Simulated record updated' },
+          data: { candidateId: candidate.id, newStatus: candidate.status, updated: true },
           executedWith,
           credentialInfo,
         };
       }
 
       case 'lookup_order': {
-        const orderId = String(toolCall.args.orderId || toolCall.args.id || 'ORD-8819');
-        const order = this.orders.find((o) => o.orderId === orderId);
+        const order = this.orders.find((o) => o.orderId === args.orderId);
         return {
           success: true,
           data: order || { error: 'Order not found', available: this.orders.map((o) => o.orderId) },
@@ -216,27 +229,22 @@ export class ProtectedToolServer {
       }
 
       case 'issue_refund': {
-        const amount = Number(toolCall.args.amount || 0);
-        const upiId = String(toolCall.args.upiId || toolCall.args.upi || '');
-        const reason = String(toolCall.args.reason || 'Customer refund request');
-
+        const amount = args.amount as number;
         const refundRecord: RefundRecord = {
-          id: `ref_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          id: `ref_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
           timestamp: new Date().toISOString(),
           amount,
-          upiId,
-          reason,
+          upiId: String(args.upiId),
+          reason: typeof args.reason === 'string' ? args.reason : 'Customer refund request',
           credentialType: executedWith,
         };
-
         this.refunds.push(refundRecord);
-
         return {
           success: true,
           data: {
             refundId: refundRecord.id,
             amountTransferred: amount,
-            upiBeneficiary: upiId,
+            upiBeneficiary: refundRecord.upiId,
             status: 'PROCESSED_SUCCESSFULLY',
           },
           executedWith,
@@ -245,12 +253,7 @@ export class ProtectedToolServer {
       }
 
       default:
-        return {
-          success: false,
-          error: `Unrecognized tool "${toolCall.tool}"`,
-          executedWith,
-          credentialInfo,
-        };
+        return { success: false, error: `Unrecognized tool "${tool}"`, executedWith, credentialInfo };
     }
   }
 
@@ -276,4 +279,4 @@ export class ProtectedToolServer {
   }
 }
 
-export const protectedToolServer = new ProtectedToolServer();
+export const protectedToolServer = new ProtectedToolServer(tokenVerifier);

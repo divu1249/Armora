@@ -2,7 +2,12 @@ import crypto from 'crypto';
 import { Finding, Segment } from '../types.ts';
 import { normalizeContent, mapOffsetToOriginal } from '../normalization.ts';
 
-const AUDIT_SALT_SECRET = process.env.AUDIT_SALT_SECRET || 'dev_audit_salt_secret_key_llm_firewall_2026';
+const AUDIT_SALT_SECRET: string =
+  process.env.AUDIT_SALT_SECRET ||
+  (() => {
+    console.warn('[pii] AUDIT_SALT_SECRET not set: using a random per-boot salt (evidence hashes will differ across restarts).');
+    return crypto.randomBytes(32).toString('hex');
+  })();
 
 /**
  * Verhoeff algorithm tables for Aadhaar checksum validation

@@ -56,31 +56,50 @@ export interface PolicyRule {
   enabled: boolean;
 }
 
+export type GateAction = 'allow' | 'deny' | 'approve';
+
+export interface MatchedRule {
+  ruleId: string;
+  action: GateAction;
+  reason: string;
+}
+
 export interface GateDecision {
-  action: 'allow' | 'deny' | 'approve';
+  action: GateAction;
+  /** Primary rule = the most restrictive matching rule (deny > approve > allow). */
   ruleId: string;
   reason: string;
   shadowWouldBlock: boolean;
   riskLevel: RiskLevel;
   requiredApprovalId?: string;
   firewallMode: FirewallMode;
+  /** Every rule that matched (all enabled rules are evaluated), most restrictive first. */
+  matchedRules?: MatchedRule[];
 }
 
-export interface TokenConstraints {
-  tool: string;
-  recipient?: string;
-  amount?: number;
-  upiId?: string;
+/** Per-session state, updated from actual tool results (never from scenario codes). */
+export interface SessionState {
+  sessionId: string;
+  untrustedIngested: boolean;
+  privateDataAccessed: boolean;
+  toolCalls: Array<{ tool: string; ts: string; success: boolean; readsPrivateData: boolean }>;
+  dataObjects: string[];
 }
 
 export interface ScopedTokenClaims {
   jti: string;
+  /** agent id */
+  sub: string;
   sessionId: string;
   tool: string;
-  constraints: TokenConstraints;
+  /** SHA-256 hex of canonical JSON of the full, validated arguments */
+  argsHash: string;
+  approvalId?: string;
+  /** seconds since epoch */
   iat: number;
-  exp: number; // 60s
-  aud: string; // 'protected-tool-server'
+  nbf: number;
+  exp: number;
+  aud: string;
 }
 
 export interface AuditEntry {
@@ -114,6 +133,8 @@ export interface ToolResult {
   error?: string;
   executedWith: 'scoped_broker_token' | 'standing_master_key';
   credentialInfo: string;
+  /** Present only for the legacy-pattern simulation (firewall = OFF). */
+  simulation?: string;
 }
 
 export interface ApprovalItem {
@@ -122,7 +143,9 @@ export interface ApprovalItem {
   createdAt: number;
   expiresAt: number;
   scenarioId: string;
+  agentId?: string;
   toolCall: ToolCall;
+  argsHash?: string;
   riskLevel: RiskLevel;
   reason: string;
   ruleId: string;
@@ -156,7 +179,10 @@ export interface Incident {
   appName?: string;
   isSeeded?: boolean;
   firewallMode: FirewallMode;
+  /** The mode that actually produced the tool call ('mock' if Gemini was requested but unavailable). */
   llmMode: LLMMode;
+  requestedLlmMode?: LLMMode;
+  llmFallbackReason?: string;
   segments: Segment[];
   findings: Finding[];
   decision: GateDecision;

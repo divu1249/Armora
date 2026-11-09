@@ -345,7 +345,7 @@ export const DemoTourModal: React.FC<DemoTourModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ShieldAlert className="w-4 h-4 text-[#ff365d]" />
-                    <h3 className="text-sm font-bold font-heading text-[#ff365d] uppercase tracking-wide">Firewall Mode: OFF (Standing Master Key)</h3>
+                    <h3 className="text-sm font-bold font-heading text-[#ff365d] uppercase tracking-wide">Firewall Mode: OFF (Simulation of the legacy pattern)</h3>
                   </div>
                   <span className="text-3xs font-mono text-[#ff365d] bg-[#ff365d]/10 px-2 py-0.5 rounded border border-[#ff365d]/40 font-bold">
                     UNPROTECTED
@@ -381,7 +381,7 @@ export const DemoTourModal: React.FC<DemoTourModalProps> = ({
                     <div className="text-[#8293aa] truncate">Body: Rajesh Kumar PAN: ABCDE1234F Aadhaar: 2345 6789 1238...</div>
                   </div>
                   <div className="flex items-center justify-between text-2xs font-mono pt-1 text-[#ff365d]">
-                    <span>Credential Used: Standing Master Key (No Gate)</span>
+                    <span>Credential Used: Standing key (Simulation of the legacy pattern, no gate)</span>
                     <span className="font-bold">STATUS: COMPROMISED</span>
                   </div>
                 </div>
@@ -491,7 +491,7 @@ export const DemoTourModal: React.FC<DemoTourModalProps> = ({
                   <span className="text-[#00f5a0] font-bold">VERIFIED CONTINUITY</span>
                 </div>
                 <div className="text-slate-500 truncate">
-                  Hash: 7a9e8f1c4290d8be53184b2c4e2098... (SHA-256 HMAC-bound)
+                  Hash: keyed HMAC-SHA256 chain entry (value shown in the Audit page)
                 </div>
               </div>
             </div>
@@ -507,7 +507,7 @@ export const DemoTourModal: React.FC<DemoTourModalProps> = ({
                     <h3 className="text-sm font-bold font-heading text-white">Adaptive Attacker vs. Action Gate</h3>
                   </div>
                   <span className="text-3xs font-mono text-[#ffb020] bg-[#ffb020]/10 px-2 py-0.5 rounded border border-[#ffb020]/30 font-bold">
-                    THESIS PROOF
+                    ILLUSTRATION
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed font-sans">

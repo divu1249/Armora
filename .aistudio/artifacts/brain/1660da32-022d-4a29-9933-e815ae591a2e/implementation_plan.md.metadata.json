@@ -1,6 +1,0 @@
-{
-  "summary":  "Revised implementation plan for LLM Firewall incorporating all 10 architectural refinements: GEMINI_MODEL env var with graceful mock fallback, HMAC-SHA256 privacy-preserving hash chain audit log with tail truncation notes, exact deterministic boundary language, updated architecture diagram with LLM call and output inspection, master key vs scoped token UI contrast, timingSafeEqual security-bound token claims, README and trust label source annotations, GET /api/incidents/:id and latency capture, offline system fonts, and extensible layout structure.",
-  "updatedAt":  "2026-11-08T09:41:01.785643051Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

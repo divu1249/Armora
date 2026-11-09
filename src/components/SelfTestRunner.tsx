@@ -36,7 +36,7 @@ export const SelfTestRunner: React.FC = () => {
               </span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Comprehensive test harness validating Verhoeff Aadhaar checksums, Luhn credit cards, single-use token replay rejection, hash-chain tamper detection, and 10 policy evaluation vectors.
+              Comprehensive test harness validating Verhoeff Aadhaar checksums, Luhn credit cards, single-use token replay rejection, hash-chain tamper detection, 10 policy evaluation vectors, and the regression suites for defects 0-9 (the same cases run under vitest).
             </p>
           </div>
 
@@ -71,7 +71,7 @@ export const SelfTestRunner: React.FC = () => {
                 </span>
               </div>
               <div className="font-mono text-xs font-bold">
-                {report.passedTests} / {report.totalTests} Passed (
+                {report.passedTests} / {report.totalTests} Passed{report.skippedTests ? `, ${report.skippedTests} skipped` : ''} (
                 {Math.round((report.passedTests / report.totalTests) * 100)}%)
               </div>
             </div>
@@ -118,7 +118,7 @@ export const SelfTestRunner: React.FC = () => {
                               : 'bg-rose-950 text-rose-300 border border-rose-800'
                           }`}
                         >
-                          {r.passed ? 'PASSED' : 'FAILED'}
+                          {r.skipped ? 'SKIPPED' : r.passed ? 'PASSED' : 'FAILED'}
                         </span>
                       </div>
                     </div>

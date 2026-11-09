@@ -1,6 +1,8 @@
 import { validateVerhoeff, generateVerhoeff, validateLuhn, redactPii } from './detectors/pii.ts';
-import { CredentialBroker, MASTER_KEY_SECRET } from './credentialBroker.ts';
 import { AuditHashChain } from './auditLog.ts';
+import { createSessionState } from './sessionState.ts';
+import { makeStack } from './regression/helpers.ts';
+import { ALL_REGRESSION_CASES } from './regression/index.ts';
 import { PolicyEngine } from './policyEngine.ts';
 import { Segment, Finding, ToolCall } from './types.ts';
 import { normalizeContent } from './normalization.ts';
@@ -16,6 +18,10 @@ export interface TestCaseResult {
   expected: unknown;
   actual: unknown;
   details?: string;
+  /** the check could not run in this environment (e.g. no source checkout); not counted as a pass */
+  skipped?: boolean;
+  /** numbered defect item (0-9) for regression cases */
+  item?: number;
 }
 
 export interface SelfTestReport {
@@ -23,11 +29,14 @@ export interface SelfTestReport {
   totalTests: number;
   passedTests: number;
   failedTests: number;
+  skippedTests: number;
+  /** regression cases that touch live singletons and therefore run only under vitest */
+  liveCasesNotRunHere: number;
   allPassed: boolean;
   suites: Record<string, { total: number; passed: number; results: TestCaseResult[] }>;
 }
 
-export function runAllSelfTests(): SelfTestReport {
+export async function runAllSelfTests(): Promise<SelfTestReport> {
   const results: TestCaseResult[] = [];
 
   // Suite 1: Verhoeff Algorithm for Aadhaar Checksums
@@ -94,84 +103,40 @@ export function runAllSelfTests(): SelfTestReport {
     details: 'Card single digit altered',
   });
 
-  // Suite 3: Token Replay & Credential Broker Protection
-  const broker = new CredentialBroker('test_secret_for_self_test_only');
-  const sampleToolCall: ToolCall = {
-    tool: 'issue_refund',
-    args: { amount: 500, upiId: 'user@okaxis' },
-  };
+  // Suite 3: Token replay & argument binding (Ed25519 broker)
+  const stack = makeStack();
+  const sampleToolCall: ToolCall = { tool: 'issue_refund', args: { amount: 500, upiId: 'user@okaxis' } };
+  const mintFor = (call: ToolCall) => stack.broker.issueToken({ sessionId: 'test_sess', agentId: 'agent_selftest', toolCall: call }).token;
+  const run = (call: ToolCall, token: string) => stack.toolServer.executeTool({ toolCall: call, credential: token, sessionId: 'test_sess' });
 
-  const { token } = broker.issueToken({
-    sessionId: 'test_sess_replay',
-    toolCall: sampleToolCall,
-  });
+  const tok1 = mintFor(sampleToolCall);
+  const first = run(sampleToolCall, tok1);
+  results.push({ suite: 'Credential Broker', name: 'First-time Broker Token Verification', passed: first.success, expected: true, actual: first.success, details: first.credentialInfo });
 
-  // First use: must succeed
-  const verify1 = broker.verifyCredentials(token, 'issue_refund', sampleToolCall.args, false);
-  results.push({
-    suite: 'Credential Broker',
-    name: 'First-time Broker Token Verification',
-    passed: verify1.valid,
-    expected: true,
-    actual: verify1.valid,
-    details: verify1.error,
-  });
-
-  // Second use: must be rejected as Replay Attack!
-  const verify2 = broker.verifyCredentials(token, 'issue_refund', sampleToolCall.args, false);
+  const second = run(sampleToolCall, tok1);
   results.push({
     suite: 'Credential Broker',
     name: 'Token Replay Rejection (Single-Use JTI Nonce Enforcement)',
-    passed: !verify2.valid && (verify2.error?.includes('Replay attack detected') ?? false),
+    passed: !second.success && (second.error?.includes('Replay attack detected') ?? false),
     expected: false,
-    actual: verify2.valid,
-    details: verify2.error,
+    actual: second.success,
+    details: second.error,
   });
 
-  // Argument tampering check: changed amount
-  const { token: tokenTamper } = broker.issueToken({
-    sessionId: 'test_sess_tamper_args',
-    toolCall: sampleToolCall,
-  });
-  const verifyTamper = broker.verifyCredentials(
-    tokenTamper,
-    'issue_refund',
-    { amount: 9999, upiId: 'user@okaxis' },
-    false
-  );
+  const tampered = run({ tool: 'issue_refund', args: { amount: 9999, upiId: 'user@okaxis' } }, mintFor(sampleToolCall));
   results.push({
     suite: 'Credential Broker',
     name: 'Bound Argument Tampering Detection',
-    passed: !verifyTamper.valid && (verifyTamper.error?.includes('Argument tampering') ?? false),
+    passed: !tampered.success && (tampered.error?.includes('Argument hash mismatch') ?? false),
     expected: false,
-    actual: verifyTamper.valid,
-    details: verifyTamper.error,
+    actual: tampered.success,
+    details: tampered.error,
   });
 
-  // Master key verification when firewall is OFF
-  const verifyMaster = broker.verifyCredentials(MASTER_KEY_SECRET, 'issue_refund', sampleToolCall.args, true);
-  results.push({
-    suite: 'Credential Broker',
-    name: 'Standing Master Key Acceptance (Firewall OFF Mode)',
-    passed: verifyMaster.valid && (verifyMaster.isMasterKey ?? false),
-    expected: true,
-    actual: verifyMaster.valid,
-    details: 'Standing Master Key bypass mode',
-  });
-
-  // Suite 4: Hash-Chain Verification and Tamper Detection
-  const chain = new AuditHashChain();
-  chain.appendEntry({
-    type: 'POLICY_DECISION',
-    sessionId: 'test_sess_chain_1',
-    data: { action: 'allow', ruleId: 'DEFAULT' },
-  });
-  chain.appendEntry({
-    type: 'TOKEN_ISSUED',
-    sessionId: 'test_sess_chain_1',
-    data: { jti: 'jti_sample_01', tool: 'send_email' },
-  });
-
+  // Suite 4: Keyed hash chain basics
+  const chain = new AuditHashChain({ key: Buffer.from('selftest-audit-key-0123456789abcdef'), quiet: true });
+  chain.appendEntry({ type: 'POLICY_DECISION', sessionId: 'test_sess_chain_1', data: { action: 'allow', ruleId: 'DEFAULT' } });
+  chain.appendEntry({ type: 'TOKEN_ISSUED', sessionId: 'test_sess_chain_1', data: { jti: 'jti_sample_01', tool: 'send_email' } });
   const pristineReport = chain.verifyChain();
   results.push({
     suite: 'Audit Hash Chain',
@@ -181,17 +146,15 @@ export function runAllSelfTests(): SelfTestReport {
     actual: pristineReport.valid,
     details: `Verified ${pristineReport.totalEntries} sequential entries from genesis`,
   });
-
-  // Maliciously tamper with block 1
   chain.tamperEntry(1, { action: 'FORGED_ADMIN_ALLOW' });
   const tamperedReport = chain.verifyChain();
   results.push({
     suite: 'Audit Hash Chain',
-    name: 'Cryptographic Tamper Detection & Pinpointed Block Identification',
+    name: 'Tamper Detection & Pinpointed Block Identification',
     passed: !tamperedReport.valid && tamperedReport.tamperedEntry?.seq === 1,
     expected: false,
     actual: tamperedReport.valid,
-    details: `Correctly flagged broken integrity at sequence ${tamperedReport.tamperedEntry?.seq}`,
+    details: `Flagged broken integrity at sequence ${tamperedReport.tamperedEntry?.seq}`,
   });
 
   // Suite 5: Policy Decisions for 10 Sample Calls
@@ -209,6 +172,7 @@ export function runAllSelfTests(): SelfTestReport {
     findings: Finding[];
     score: number;
     mode: 'enforce' | 'shadow';
+    /** explicit input for this table test: the state a prior real read would have produced */
     accessedPrivateData?: boolean;
     expectedAction: 'allow' | 'deny' | 'approve';
     expectedRule: string;
@@ -333,10 +297,14 @@ export function runAllSelfTests(): SelfTestReport {
       findings: vec.findings,
       injectionScore: vec.score,
       firewallMode: vec.mode,
-      accessedPrivateData: vec.accessedPrivateData,
+      sessionState: (() => {
+        const st = createSessionState('selftest', vec.segments);
+        st.privateDataAccessed = Boolean(vec.accessedPrivateData);
+        return st;
+      })(),
     });
 
-    const passed = dec.action === vec.expectedAction && (vec.mode === 'shadow' ? dec.shadowWouldBlock : true);
+    const passed = dec.action === vec.expectedAction && dec.ruleId === vec.expectedRule && (vec.mode === 'shadow' ? dec.shadowWouldBlock : true);
 
     results.push({
       suite: 'Policy Engine Test Vectors (10 Calls)',
@@ -344,7 +312,7 @@ export function runAllSelfTests(): SelfTestReport {
       passed,
       expected: vec.expectedAction,
       actual: dec.action,
-      details: `Rule: ${dec.ruleId} | Reason: ${dec.reason.substring(0, 60)}...`,
+      details: `Rule: ${dec.ruleId} (expected ${vec.expectedRule}) | Reason: ${dec.reason.substring(0, 60)}...`,
     });
   }
 
@@ -444,6 +412,18 @@ export function runAllSelfTests(): SelfTestReport {
     details: `Initial: ${sendEmailTool?.status} -> Rug-pull: ${rugPulledTool?.status}`,
   });
 
+  // Regression suites for the numbered defect list (shared with the vitest files in tests/).
+  const regression = ALL_REGRESSION_CASES.filter((c) => !c.live);
+  const liveCasesNotRunHere = ALL_REGRESSION_CASES.length - regression.length;
+  for (const c of regression) {
+    try {
+      const r = await c.run();
+      results.push({ suite: c.suite, name: c.name, passed: r.passed, expected: r.expected, actual: r.actual, details: r.details, skipped: r.skipped, item: c.item });
+    } catch (err) {
+      results.push({ suite: c.suite, name: c.name, passed: false, expected: 'no exception', actual: err instanceof Error ? err.message : String(err), item: c.item });
+    }
+  }
+
   const suites: Record<string, { total: number; passed: number; results: TestCaseResult[] }> = {};
   for (const r of results) {
     if (!suites[r.suite]) {
@@ -454,14 +434,18 @@ export function runAllSelfTests(): SelfTestReport {
     suites[r.suite].results.push(r);
   }
 
-  const passedTests = results.filter((r) => r.passed).length;
+  const skippedTests = results.filter((r) => r.skipped).length;
+  const passedTests = results.filter((r) => r.passed && !r.skipped).length;
+  const failedTests = results.filter((r) => !r.passed).length;
 
   return {
     timestamp: new Date().toISOString(),
     totalTests: results.length,
     passedTests,
-    failedTests: results.length - passedTests,
-    allPassed: passedTests === results.length,
+    failedTests,
+    skippedTests,
+    liveCasesNotRunHere,
+    allPassed: failedTests === 0,
     suites,
   };
 }

@@ -49,7 +49,7 @@ export const OWASP_LLM_COMPLIANCE_MATRIX: ComplianceMatrixResponse = {
         'Automatic PII redaction token replacement ([REDACTED:AADHAAR])',
       ],
       notes:
-        'Raw PII is never stored in finding records or logged in hash chain entries.',
+        'Raw PII is never stored in finding records or logged in audit entries.',
     },
     {
       id: 'LLM03',
@@ -100,9 +100,9 @@ export const OWASP_LLM_COMPLIANCE_MATRIX: ComplianceMatrixResponse = {
       description:
         'Granting LLM agents excessive privileges, unconstrained tool scopes, or autonomous irreversible action capabilities.',
       mechanisms: [
-        'Action Gate & Credential Broker: short-lived 60-second HMAC tokens',
-        'Strict constraint binding: tokens bind recipient, amount, and tool identity',
-        'Standing master keys prohibited when firewall is active',
+        'Action Gate & Credential Broker: short-lived 60-second Ed25519-signed tokens',
+        'Exact-call binding: tokens bind tool, session and a SHA-256 of the full validated arguments',
+        'The real tool server accepts no standing keys (the firewall-OFF contrast is an isolated legacy-pattern simulation)',
         'Trifecta Guard (R2): private data + untrusted context = block',
       ],
       notes:

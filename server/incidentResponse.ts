@@ -1,4 +1,5 @@
 import { auditLog } from './auditLog.ts';
+import { credentialBroker } from './credentialBroker.ts';
 import { Incident } from './types.ts';
 
 export interface BlastRadiusNode {
@@ -73,6 +74,7 @@ export class IncidentResponseEngine {
   public toggleKillSwitch(agentId: string, enableQuarantine: boolean, reason: string): { quarantined: boolean; agentId: string } {
     if (enableQuarantine) {
       this.quarantinedAgents.add(agentId);
+      const tokensRevoked = credentialBroker.revokeAgent(agentId);
       auditLog.appendEntry({
         type: 'POLICY_DECISION',
         sessionId: `kill_switch_${agentId}`,
@@ -81,7 +83,7 @@ export class IncidentResponseEngine {
           agentId,
           reason,
           quarantined: true,
-          keysRevoked: true,
+          outstandingTokensRevoked: tokensRevoked,
         },
       });
       this.killSwitchAuditEvents.unshift({
@@ -261,7 +263,7 @@ export class IncidentResponseEngine {
         phase: 'Boundary Verification & Outbox',
         title: incident.dataLeftPremises ? 'Data Leak Occurred (Firewall OFF)' : 'Data Contained Securely',
         description: incident.dataLeftPremises
-          ? 'Synthetic confidential files transmitted to outbox via Master Key.'
+          ? 'Synthetic confidential files transmitted to outbox (legacy-pattern simulation, standing key).'
           : 'Zero outbound data leakage. Protected tool server verified credential boundary.',
         status: incident.dataLeftPremises ? 'FLAGGED' : 'SUCCESS',
       },
@@ -287,7 +289,7 @@ export class IncidentResponseEngine {
         `T+${incident.latency.policyMs}ms: Action Gate evaluated tool call [${incident.toolCall?.tool || 'none'}] -> Decision: ${incident.decision.action}`,
         `T+${incident.latency.totalMs}ms: Outbox verification confirmed data transmission status: ${incident.dataLeftPremises ? 'LEAKED (FIREWALL OFF)' : 'CONTAINED (FIREWALL ENFORCE)'}`,
       ],
-      technicalRemediation: 'Enforcement of deterministic Action Gate, elimination of standing master credentials, and HMAC single-use micro-tokens.',
+      technicalRemediation: 'Enforcement of deterministic Action Gate, no standing credentials on the real path, and Ed25519-signed single-use micro-tokens.',
       mitigationActions: [
         'Isolated tainted session in in-memory execution sandbox',
         'Revoked ephemeral credential token within 60-second window',

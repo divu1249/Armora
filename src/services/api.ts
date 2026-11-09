@@ -15,8 +15,55 @@ import { VerificationReport } from '../../server/auditLog.ts';
 import { SelfTestReport } from '../../server/selfTest.ts';
 import { OutboxEmail, RefundRecord } from '../../server/protectedTools.ts';
 
+const ADMIN_TOKEN_KEY = 'armora_admin_token';
+
+export function getAdminToken(): string {
+  try {
+    return sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setAdminToken(token: string): void {
+  try {
+    if (token) sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    else sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** fetch wrapper: attaches the admin token (kept in sessionStorage only) to every request. */
+function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getAdminToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set('x-admin-token', token);
+  return fetch(input, { ...init, headers });
+}
+
+export interface AppConfigInfo {
+  demoMode: boolean;
+  production: boolean;
+  adminTokenRequired: boolean;
+  legacyLabel: string;
+  gemini: { state: string; model: string; detail: string; banner: string | null };
+}
+
+export async function fetchAppConfig(): Promise<AppConfigInfo> {
+  const res = await apiFetch('/api/config');
+  if (!res.ok) throw new Error('Failed to fetch config');
+  return res.json();
+}
+
+export async function fetchAuditAnchors(): Promise<{ anchors: Array<{ seq: number; headHash: string; ts: string; sig: string }>; note: string }> {
+  const res = await apiFetch('/api/audit/anchors');
+  if (!res.ok) throw new Error('Failed to fetch anchors');
+  return res.json();
+}
+
 export async function fetchScenarios(): Promise<ScenarioDefinition[]> {
-  const res = await fetch('/api/scenarios');
+  const res = await apiFetch('/api/scenarios');
   if (!res.ok) throw new Error('Failed to fetch scenarios');
   const data = await res.json();
   return data.scenarios;
@@ -27,7 +74,7 @@ export async function runAgentScenario(params: {
   firewallMode: FirewallMode;
   llmMode: LLMMode;
 }): Promise<Incident> {
-  const res = await fetch('/api/agent/run', {
+  const res = await apiFetch('/api/agent/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -41,21 +88,21 @@ export async function runAgentScenario(params: {
 }
 
 export async function fetchIncidents(): Promise<Incident[]> {
-  const res = await fetch('/api/incidents');
+  const res = await apiFetch('/api/incidents');
   if (!res.ok) throw new Error('Failed to fetch incidents');
   const data = await res.json();
   return data.incidents;
 }
 
 export async function fetchIncidentById(id: string): Promise<Incident> {
-  const res = await fetch(`/api/incidents/${id}`);
+  const res = await apiFetch(`/api/incidents/${id}`);
   if (!res.ok) throw new Error('Failed to fetch incident');
   const data = await res.json();
   return data.incident;
 }
 
 export async function fetchApprovals(): Promise<{ pending: ApprovalItem[]; all: ApprovalItem[] }> {
-  const res = await fetch('/api/approvals');
+  const res = await apiFetch('/api/approvals');
   if (!res.ok) throw new Error('Failed to fetch approvals');
   return res.json();
 }
@@ -65,7 +112,7 @@ export async function resolveApproval(
   action: 'APPROVE' | 'DENY',
   notes?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const res = await fetch(`/api/approvals/${id}`, {
+  const res = await apiFetch(`/api/approvals/${id}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, notes }),
@@ -78,13 +125,13 @@ export async function resolveApproval(
 }
 
 export async function fetchPolicy(): Promise<{ policyYaml: string; taxonomy: Record<string, ToolTaxonomy> }> {
-  const res = await fetch('/api/policy');
+  const res = await apiFetch('/api/policy');
   if (!res.ok) throw new Error('Failed to fetch policy');
   return res.json();
 }
 
 export async function updatePolicy(yamlContent: string): Promise<{ success: boolean; error?: string }> {
-  const res = await fetch('/api/policy', {
+  const res = await apiFetch('/api/policy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ yamlContent }),
@@ -95,20 +142,20 @@ export async function updatePolicy(yamlContent: string): Promise<{ success: bool
 }
 
 export async function fetchAuditLog(): Promise<{ entries: AuditEntry[]; totalEntries: number }> {
-  const res = await fetch('/api/audit');
+  const res = await apiFetch('/api/audit');
   if (!res.ok) throw new Error('Failed to fetch audit log');
   return res.json();
 }
 
 export async function verifyAuditChain(): Promise<VerificationReport> {
-  const res = await fetch('/api/audit/verify');
+  const res = await apiFetch('/api/audit/verify');
   if (!res.ok) throw new Error('Failed to verify audit chain');
   const data = await res.json();
   return data.report;
 }
 
 export async function simulateAuditTamper(seq: number): Promise<{ success: boolean; tamperedSeq: number }> {
-  const res = await fetch('/api/audit/tamper', {
+  const res = await apiFetch('/api/audit/tamper', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ seq, forgedData: { ruleId: 'R1', action: 'FORGED_ALLOW', forged: true } }),
@@ -118,13 +165,13 @@ export async function simulateAuditTamper(seq: number): Promise<{ success: boole
 }
 
 export async function resetSystemState(): Promise<{ success: boolean; message: string }> {
-  const res = await fetch('/api/reset', { method: 'POST' });
+  const res = await apiFetch('/api/reset', { method: 'POST' });
   if (!res.ok) throw new Error('Failed to reset system state');
   return res.json();
 }
 
 export async function runSelfTests(): Promise<SelfTestReport> {
-  const res = await fetch('/api/selftest');
+  const res = await apiFetch('/api/selftest');
   if (!res.ok) throw new Error('Failed to run self-tests');
   const data = await res.json();
   return data.report;
@@ -134,20 +181,20 @@ export async function fetchOutboxAndRefunds(): Promise<{
   outbox: OutboxEmail[];
   refunds: RefundRecord[];
 }> {
-  const res = await fetch('/api/tools/outbox');
+  const res = await apiFetch('/api/tools/outbox');
   if (!res.ok) throw new Error('Failed to fetch tools status');
   return res.json();
 }
 
 export async function fetchApps(): Promise<OrgApp[]> {
-  const res = await fetch('/api/apps');
+  const res = await apiFetch('/api/apps');
   if (!res.ok) throw new Error('Failed to fetch apps');
   const data = await res.json();
   return data.apps;
 }
 
 export async function updateAppConfig(appId: string, updates: Partial<OrgApp>): Promise<OrgApp> {
-  const res = await fetch(`/api/apps/${appId}`, {
+  const res = await apiFetch(`/api/apps/${appId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -162,7 +209,7 @@ export async function dryRunPolicy(params: {
   segments: unknown[];
   firewallMode?: FirewallMode;
 }): Promise<{ decision: GateDecision; findings: Finding[]; injectionScore: number }> {
-  const res = await fetch('/api/policy/dry-run', {
+  const res = await apiFetch('/api/policy/dry-run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -175,7 +222,7 @@ export async function dryRunPolicy(params: {
 }
 
 export async function fetchPolicyVersions(): Promise<PolicyVersion[]> {
-  const res = await fetch('/api/policy/versions');
+  const res = await apiFetch('/api/policy/versions');
   if (!res.ok) throw new Error('Failed to fetch policy versions');
   const data = await res.json();
   return data.versions;
@@ -194,20 +241,20 @@ export interface ComplianceMatrixResponse {
 }
 
 export async function fetchComplianceMatrix(): Promise<ComplianceMatrixResponse> {
-  const res = await fetch('/api/compliance');
+  const res = await apiFetch('/api/compliance');
   if (!res.ok) throw new Error('Failed to fetch compliance matrix');
   return res.json();
 }
 
 // --- Red-Team Runner API ---
 export async function fetchRedTeamAttacks() {
-  const res = await fetch('/api/redteam/attacks');
+  const res = await apiFetch('/api/redteam/attacks');
   if (!res.ok) throw new Error('Failed to fetch red-team attacks');
   return res.json();
 }
 
 export async function runRedTeamSuite(firewallMode: FirewallMode) {
-  const res = await fetch('/api/redteam/run', {
+  const res = await apiFetch('/api/redteam/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ firewallMode }),
@@ -217,7 +264,7 @@ export async function runRedTeamSuite(firewallMode: FirewallMode) {
 }
 
 export async function runAdaptiveAttack(attackId: string, maxAttempts: number = 8) {
-  const res = await fetch('/api/redteam/adaptive', {
+  const res = await apiFetch('/api/redteam/adaptive', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ attackId, maxAttempts }),
@@ -227,7 +274,7 @@ export async function runAdaptiveAttack(attackId: string, maxAttempts: number = 
 }
 
 export async function fetchReportHtml(report: unknown) {
-  const res = await fetch('/api/redteam/report/html', {
+  const res = await apiFetch('/api/redteam/report/html', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ report }),
@@ -238,19 +285,19 @@ export async function fetchReportHtml(report: unknown) {
 
 // --- Attack Intelligence API ---
 export async function enrichIndicator(indicator: string) {
-  const res = await fetch(`/api/intel/enrich/${encodeURIComponent(indicator)}`);
+  const res = await apiFetch(`/api/intel/enrich/${encodeURIComponent(indicator)}`);
   if (!res.ok) throw new Error('Failed to enrich indicator');
   return res.json();
 }
 
 export async function fetchCampaigns() {
-  const res = await fetch('/api/intel/campaigns');
+  const res = await apiFetch('/api/intel/campaigns');
   if (!res.ok) throw new Error('Failed to fetch campaigns');
   return res.json();
 }
 
 export async function fetchBlocklist() {
-  const res = await fetch('/api/intel/blocklist');
+  const res = await apiFetch('/api/intel/blocklist');
   if (!res.ok) throw new Error('Failed to fetch blocklist');
   return res.json();
 }
@@ -263,7 +310,7 @@ export async function addBlocklistEntry(data: {
   ttlHours?: number;
   appealNote?: string;
 }) {
-  const res = await fetch('/api/intel/blocklist', {
+  const res = await apiFetch('/api/intel/blocklist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -273,7 +320,7 @@ export async function addBlocklistEntry(data: {
 }
 
 export async function approveBlocklistEntry(id: string, approver?: string) {
-  const res = await fetch(`/api/intel/blocklist/${id}/approve`, {
+  const res = await apiFetch(`/api/intel/blocklist/${id}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ approver }),
@@ -283,7 +330,7 @@ export async function approveBlocklistEntry(id: string, approver?: string) {
 }
 
 export async function allowlistEntry(id: string) {
-  const res = await fetch(`/api/intel/blocklist/${id}/allowlist`, {
+  const res = await apiFetch(`/api/intel/blocklist/${id}/allowlist`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to allowlist entry');
@@ -291,7 +338,7 @@ export async function allowlistEntry(id: string) {
 }
 
 export async function exportStixJson() {
-  const res = await fetch('/api/intel/blocklist/export-stix');
+  const res = await apiFetch('/api/intel/blocklist/export-stix');
   if (!res.ok) throw new Error('Failed to export STIX JSON');
   return res.json();
 }
@@ -299,25 +346,25 @@ export async function exportStixJson() {
 // --- Traffic Intelligence API ---
 export async function fetchTrafficSeries(appId?: string) {
   const url = appId && appId !== 'all' ? `/api/traffic/series?appId=${appId}` : '/api/traffic/series';
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error('Failed to fetch traffic series');
   return res.json();
 }
 
 export async function fetchRiskyAccounts() {
-  const res = await fetch('/api/traffic/accounts');
+  const res = await apiFetch('/api/traffic/accounts');
   if (!res.ok) throw new Error('Failed to fetch risky accounts');
   return res.json();
 }
 
 export async function fetchDetectorHealth() {
-  const res = await fetch('/api/traffic/detectors');
+  const res = await apiFetch('/api/traffic/detectors');
   if (!res.ok) throw new Error('Failed to fetch detector health');
   return res.json();
 }
 
 export async function markDetectorFalsePositive(detectorName: string) {
-  const res = await fetch('/api/traffic/mark-fp', {
+  const res = await apiFetch('/api/traffic/mark-fp', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ detectorName }),
@@ -328,19 +375,19 @@ export async function markDetectorFalsePositive(detectorName: string) {
 
 // --- AI Incident Response API ---
 export async function fetchBlastRadiusGraph(incidentId: string) {
-  const res = await fetch(`/api/response/blast-radius/${incidentId}`);
+  const res = await apiFetch(`/api/response/blast-radius/${incidentId}`);
   if (!res.ok) throw new Error('Failed to fetch blast radius graph');
   return res.json();
 }
 
 export async function fetchKillSwitchState() {
-  const res = await fetch('/api/response/kill-switch');
+  const res = await apiFetch('/api/response/kill-switch');
   if (!res.ok) throw new Error('Failed to fetch kill-switch state');
   return res.json();
 }
 
 export async function toggleKillSwitch(agentId: string, enableQuarantine: boolean, reason?: string) {
-  const res = await fetch('/api/response/kill-switch', {
+  const res = await apiFetch('/api/response/kill-switch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agentId, enableQuarantine, reason }),
@@ -350,26 +397,26 @@ export async function toggleKillSwitch(agentId: string, enableQuarantine: boolea
 }
 
 export async function fetchReportDrafts(incidentId: string) {
-  const res = await fetch(`/api/response/reports/${incidentId}`);
+  const res = await apiFetch(`/api/response/reports/${incidentId}`);
   if (!res.ok) throw new Error('Failed to fetch incident report drafts');
   return res.json();
 }
 
 export async function fetchTimeline(incidentId: string) {
-  const res = await fetch(`/api/response/timeline/${incidentId}`);
+  const res = await apiFetch(`/api/response/timeline/${incidentId}`);
   if (!res.ok) throw new Error('Failed to fetch incident timeline');
   return res.json();
 }
 
 // --- MCP Tool Vetting API ---
 export async function fetchMcpTools() {
-  const res = await fetch('/api/mcp/tools');
+  const res = await apiFetch('/api/mcp/tools');
   if (!res.ok) throw new Error('Failed to fetch MCP tools');
   return res.json();
 }
 
 export async function simulateMcpRugPull(toolId: string) {
-  const res = await fetch('/api/mcp/rug-pull', {
+  const res = await apiFetch('/api/mcp/rug-pull', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ toolId }),
@@ -379,7 +426,7 @@ export async function simulateMcpRugPull(toolId: string) {
 }
 
 export async function resetMcpRegistry() {
-  const res = await fetch('/api/mcp/reset', {
+  const res = await apiFetch('/api/mcp/reset', {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to reset MCP registry');

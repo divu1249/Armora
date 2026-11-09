@@ -94,6 +94,13 @@ export const RedTeamRunner: React.FC = () => {
   const categories = [
     'ALL',
     'INSTRUCTION_OVERRIDE',
+    'RECIPIENT_LIST',
+    'CC_BCC',
+    'DISPLAY_NAME',
+    'IDN_LOOKALIKE',
+    'UPI_MISMATCH',
+    'TOKEN_ABUSE',
+    'BENIGN_TASK',
     'ROLE_HIJACK',
     'INDIRECT_DOC',
     'INDIRECT_TOOL_OUTPUT',
@@ -123,7 +130,7 @@ export const RedTeamRunner: React.FC = () => {
               <Crosshair className="w-4 h-4 text-rose-600" />
               Automated Red-Team Runner
               <span className="text-2xs font-mono text-slate-500 font-normal">
-                [SEEDED: 24 Synthetic Attack Vectors]
+                [SEEDED: synthetic attack + benign task set]
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -160,7 +167,7 @@ export const RedTeamRunner: React.FC = () => {
               className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              {loadingSuite ? 'Evaluating 24 Attacks...' : 'Run Suite'}
+              {loadingSuite ? 'Evaluating seed set...' : 'Run Suite'}
             </button>
           </div>
         </div>
@@ -208,63 +215,76 @@ export const RedTeamRunner: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 font-mono">
+            <div className="text-2xs text-slate-500 font-sans">
+              On our seed set, n={suiteReport.sampleSize} ({suiteReport.harmfulAttacks} harmful, {suiteReport.benignAttacks} benign).
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 font-mono">
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Harmful Success</div>
-                <div
-                  className={`text-lg font-bold tabular-nums mt-0.5 ${
-                    suiteReport.metrics.harmfulActionSuccessRate === 0 ? 'text-emerald-700' : 'text-rose-700'
-                  }`}
-                >
-                  {suiteReport.metrics.harmfulActionSuccessRate}%
+                <div className="text-2xs text-slate-500 font-sans">Harm Executed</div>
+                <div className={`text-lg font-bold tabular-nums mt-0.5 ${suiteReport.metrics.harmfulActionsExecuted === 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  {suiteReport.metrics.harmfulActionsExecuted} ({suiteReport.metrics.harmfulActionSuccessRate}%)
                 </div>
-                <div className="text-3xs text-slate-400 font-sans">Did harm occur?</div>
+                <div className="text-3xs text-slate-400 font-sans">Really executed on tool server</div>
               </div>
-
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
+                <div className="text-2xs text-slate-500 font-sans">Blocked</div>
+                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">{suiteReport.metrics.blockedCount}</div>
+                <div className="text-3xs text-slate-400 font-sans">Denied by gate/verifier</div>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
+                <div className="text-2xs text-slate-500 font-sans">Pending Approval</div>
+                <div className="text-lg font-bold text-amber-700 tabular-nums mt-0.5">{suiteReport.metrics.pendingApprovalCount}</div>
+                <div className="text-3xs text-slate-400 font-sans">Not counted as blocked</div>
+              </div>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
                 <div className="text-2xs text-slate-500 font-sans">Detector Catch</div>
+                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">{suiteReport.metrics.detectorCatchRate}%</div>
+                <div className="text-3xs text-slate-400 font-sans">Heuristic, informational</div>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
+                <div className="text-2xs text-slate-500 font-sans">Gate False Positives</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">
-                  {suiteReport.metrics.detectorCatchRate}%
+                  {suiteReport.metrics.gateFalsePositiveCount} ({suiteReport.metrics.falsePositiveRate}%)
                 </div>
-                <div className="text-3xs text-slate-400 font-sans">Informational only</div>
+                <div className="text-3xs text-slate-400 font-sans">Benign tasks denied</div>
               </div>
-
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Benign Task Comp.</div>
-                <div className="text-lg font-bold text-indigo-700 tabular-nums mt-0.5">
-                  {suiteReport.metrics.benignTaskCompletionRate}%
-                </div>
-                <div className="text-3xs text-slate-400 font-sans">Standard tasks passed</div>
+                <div className="text-2xs text-slate-500 font-sans">Detector False Positives</div>
+                <div className="text-lg font-bold text-amber-700 tabular-nums mt-0.5">{suiteReport.metrics.detectorFalsePositiveCount}</div>
+                <div className="text-3xs text-slate-400 font-sans">Benign text flagged</div>
               </div>
-
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">False Positives</div>
+                <div className="text-2xs text-slate-500 font-sans">Benign Completed</div>
+                <div className="text-lg font-bold text-indigo-700 tabular-nums mt-0.5">{suiteReport.metrics.benignTaskCompletionRate}%</div>
+                <div className="text-3xs text-slate-400 font-sans">{suiteReport.metrics.benignNeedingApprovalCount} needed approval</div>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
+                <div className="text-2xs text-slate-500 font-sans">Latency p50 / p95</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">
-                  {suiteReport.metrics.falsePositiveCount}
+                  {suiteReport.metrics.latencyP50} / {suiteReport.metrics.latencyP95} ms
                 </div>
-                <div className="text-3xs text-slate-400 font-sans">Benign blocked</div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Approvals Queued</div>
-                <div className="text-lg font-bold text-amber-700 tabular-nums mt-0.5">
-                  {suiteReport.metrics.approvalsTriggeredCount}
-                </div>
-                <div className="text-3xs text-slate-400 font-sans">Human sign-offs</div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Added Latency</div>
-                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">
-                  {suiteReport.metrics.latencyP95} ms
-                </div>
-                <div className="text-3xs text-slate-400 font-sans">p95 / p50: {suiteReport.metrics.latencyP50}ms</div>
+                <div className="text-3xs text-slate-400 font-sans">Per-case, in-process</div>
               </div>
             </div>
+
+            {suiteReport.results.some((r: any) => r.detectorFalsePositive) && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-900">
+                <strong>Detector false positives (benign tasks flagged):</strong>{' '}
+                {suiteReport.results
+                  .filter((r: any) => r.detectorFalsePositive)
+                  .map((r: any) => `${r.attackId} ${r.attackName}`)
+                  .join('; ')}
+              </div>
+            )}
+            <ul className="list-disc pl-5 text-2xs text-slate-500 space-y-0.5">
+              {suiteReport.notes.map((n: string) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
           </div>
         ) : (
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-md text-center text-xs text-slate-500">
-            Click &ldquo;Run Suite&rdquo; to benchmark the 24 synthetic attack vectors and compute the empirical security score.
+            Click &ldquo;Run Suite&rdquo; to run the seed set (harmful and benign tasks) against an isolated tool server and measure what actually executes.
           </div>
         )}
       </div>
@@ -281,7 +301,7 @@ export const RedTeamRunner: React.FC = () => {
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Simulates an adversarial query-loop mutating payloads (casing, synonyms, zero-width chars, base64) to evade detectors—while proving the Action Gate still blocks the harmful outcome.
+              Simulates an adversarial query-loop mutating payloads (casing, synonyms, zero-width chars, base64) to evade detectors—and records what the Action Gate decides for each mutation (an illustration with a handful of mutations, not a proof).
             </p>
           </div>
 
@@ -373,7 +393,7 @@ export const RedTeamRunner: React.FC = () => {
         )}
       </div>
 
-      {/* 24 Synthetic Attack Library View */}
+      {/* Synthetic Attack Library View */}
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
