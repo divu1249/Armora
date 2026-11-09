@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
 import crypto from 'crypto';
 import {
   AppEvent,
@@ -12,6 +11,7 @@ import {
   OrgApp,
   Segment,
   ToolCall,
+  SessionState,
   ToolResult,
 } from './types.ts';
 import { normalizeContent } from './normalization.ts';
@@ -20,7 +20,11 @@ import { detectPiiAndSecrets, redactPii } from './detectors/pii.ts';
 import { checkCanaryLeak, SYSTEM_CANARY_TOKEN } from './detectors/canary.ts';
 import { detectOutputExfiltration } from './detectors/exfiltration.ts';
 import { policyEngine } from './policyEngine.ts';
-import { credentialBroker, MASTER_KEY_SECRET } from './credentialBroker.ts';
+import { credentialBroker, tokenVerifier, hashArgs } from './credentialBroker.ts';
+import { legacyStandingKeyDemo, LEGACY_LABEL } from './legacyStandingKeyDemo.ts';
+import { validateToolArgs } from './toolSchemas.ts';
+import { createSessionState, recordToolResult } from './sessionState.ts';
+import { createClient as createGeminiClient, getGeminiModel, getGeminiStatus } from './gemini.ts';
 import { protectedToolServer } from './protectedTools.ts';
 import { auditLog } from './auditLog.ts';
 import { SEEDED_SCENARIOS, ScenarioDefinition } from './scenarios.ts';
@@ -50,6 +54,12 @@ export function broadcastEvent(event: AppEvent): void {
 // In-memory incidents, apps, and pending approvals
 const incidentStore: Map<string, Incident> = new Map();
 const approvalStore: Map<string, ApprovalItem> = new Map();
+const sessionStates: Map<string, SessionState> = new Map();
+
+/** Demo display keys are random per boot (no hard-coded secrets). */
+function demoKey(): string {
+  return `fw_demo_${crypto.randomBytes(6).toString('hex')}`;
+}
 
 export const SEEDED_APPS: OrgApp[] = [
   {
@@ -61,7 +71,7 @@ export const SEEDED_APPS: OrgApp[] = [
     totalRequests: 142,
     blockedCount: 29,
     allowedTools: ['read_candidate_files', 'update_candidate_status', 'send_email'],
-    apiKey: 'fw_live_hr_8819_sec',
+    apiKey: demoKey(),
     environment: 'production',
   },
   {
@@ -73,7 +83,7 @@ export const SEEDED_APPS: OrgApp[] = [
     totalRequests: 320,
     blockedCount: 41,
     allowedTools: ['lookup_order', 'issue_refund'],
-    apiKey: 'fw_live_supp_4421_sec',
+    apiKey: demoKey(),
     environment: 'production',
   },
   {
@@ -85,7 +95,7 @@ export const SEEDED_APPS: OrgApp[] = [
     totalRequests: 890,
     blockedCount: 12,
     allowedTools: ['lookup_order'],
-    apiKey: 'fw_live_search_1092_sec',
+    apiKey: demoKey(),
     environment: 'production',
   },
 ];
@@ -93,7 +103,7 @@ export const SEEDED_APPS: OrgApp[] = [
 let currentApps: OrgApp[] = JSON.parse(JSON.stringify(SEEDED_APPS));
 
 // Periodic sweep for expired approvals (60s limit)
-setInterval(() => {
+const approvalSweeper = setInterval(() => {
   const now = Date.now();
   for (const [id, item] of approvalStore.entries()) {
     if (item.status === 'PENDING' && now > item.expiresAt) {
@@ -117,22 +127,28 @@ setInterval(() => {
     }
   }
 }, 5000);
+approvalSweeper.unref?.();
+
+export interface AppPatch {
+  name?: string;
+  description?: string;
+  allowedTools?: string[];
+  environment?: 'production' | 'staging';
+}
 
 export class AgentRunner {
-  private geminiModel: string;
-
   constructor() {
-    this.geminiModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     this.seedInitialHistory();
   }
 
   /**
-   * Runs an agent scenario through the full LLM Firewall pipeline.
+   * Runs an agent scenario through the full pipeline.
    */
   public async runScenario(params: {
     scenarioId: string;
     firewallMode: FirewallMode;
     llmMode: LLMMode;
+    /** Only honoured by the HTTP layer when DEMO_MODE=true. */
     overrideToolCall?: ToolCall;
   }): Promise<Incident> {
     const t0 = performance.now();
@@ -140,6 +156,7 @@ export class AgentRunner {
     const notices: string[] = [];
 
     const scenario = SEEDED_SCENARIOS.find((s) => s.id === params.scenarioId) || SEEDED_SCENARIOS[0];
+    const agentId = `agent_${scenario.id}`;
 
     broadcastEvent({
       type: 'RUN_START',
@@ -157,11 +174,7 @@ export class AgentRunner {
     const tNormStart = performance.now();
     const processedSegments: Segment[] = scenario.segments.map((s) => {
       const norm = normalizeContent(s.content);
-      return {
-        ...s,
-        content: norm.normalized,
-        labelSource: s.labelSource || 'app-marked',
-      };
+      return { ...s, content: norm.normalized, labelSource: s.labelSource || 'app-marked' };
     });
     const normalizationMs = Math.round(performance.now() - tNormStart);
 
@@ -172,32 +185,23 @@ export class AgentRunner {
       payload: { segments: processedSegments },
     });
 
+    // Per-session state: starts from the ingested segments, then is updated from real tool results only.
+    const state = createSessionState(sessionId, processedSegments);
+    sessionStates.set(sessionId, state);
+
     // 2. Multi-Detector Pipeline
     const tDetectStart = performance.now();
     const allFindings: Finding[] = [];
     let maxInjectionScore = 0;
 
     for (const segment of processedSegments) {
-      // Heuristic & Hinglish injection detection
       const injResult = detectPromptInjection(segment);
-      if (injResult.score > maxInjectionScore) {
-        maxInjectionScore = injResult.score;
-      }
+      if (injResult.score > maxInjectionScore) maxInjectionScore = injResult.score;
       allFindings.push(...injResult.findings);
-
-      // PII & Secrets detection
-      const piiFindings = detectPiiAndSecrets(segment);
-      allFindings.push(...piiFindings);
-
-      // Canary leak detection
+      allFindings.push(...detectPiiAndSecrets(segment));
       const canaryFinding = checkCanaryLeak(segment.content, segment.id);
-      if (canaryFinding) {
-        allFindings.push(canaryFinding);
-      }
-
-      // Output / doc exfiltration detection
-      const exfilFindings = detectOutputExfiltration(segment.content, segment.id);
-      allFindings.push(...exfilFindings);
+      if (canaryFinding) allFindings.push(canaryFinding);
+      allFindings.push(...detectOutputExfiltration(segment.content, segment.id));
     }
     const detectionMs = Math.round(performance.now() - tDetectStart);
 
@@ -208,61 +212,116 @@ export class AgentRunner {
       payload: { findingsCount: allFindings.length, maxInjectionScore },
     });
 
-    // 3. LLM Execution Engine (Simulated Fooled Agent vs Gemini 3.8 Flash)
+    const quarantined = incidentResponseEngine.isAgentQuarantined(agentId);
+
+    // 2b. Legitimate workflow steps (read-only) executed through the gate; they build the session state.
+    if (!quarantined) {
+      for (const pre of scenario.preToolCalls ?? []) {
+        const call = structuredClone(pre);
+        const v = validateToolArgs(call.tool, call.args);
+        if (!v.ok) {
+          notices.push(`Pre-step "${call.tool}" skipped: ${v.error}`);
+          continue;
+        }
+        const preDecision = policyEngine.evaluate({
+          toolCall: call,
+          segments: processedSegments,
+          findings: allFindings,
+          injectionScore: maxInjectionScore,
+          firewallMode: params.firewallMode,
+          sessionState: state,
+        });
+        auditLog.appendEntry({
+          type: 'POLICY_DECISION',
+          sessionId,
+          data: { ruleId: preDecision.ruleId, action: preDecision.action, tool: call.tool, step: 'pre-tool-call', firewallMode: params.firewallMode },
+        });
+        if (preDecision.action === 'allow') {
+          const r = this.executeAllowed({ sessionId, agentId, firewallMode: params.firewallMode, state, notices }, call);
+          notices.push(`Pre-step ${call.tool}: ${r.success ? 'executed (session state updated from the real result)' : `failed: ${r.error}`}`);
+        } else {
+          notices.push(`Pre-step ${call.tool}: ${preDecision.action} by ${preDecision.ruleId}`);
+        }
+      }
+    }
+
+    // 3. Agent: simulated fooled agent vs Gemini (never silently substituted)
     const tLlmStart = performance.now();
-    let proposedToolCall: ToolCall | undefined = params.overrideToolCall;
+    let proposedToolCall: ToolCall | undefined = params.overrideToolCall ? structuredClone(params.overrideToolCall) : undefined;
+    let effectiveLlm: LLMMode = params.llmMode;
+    let llmFallbackReason: string | undefined;
 
     if (!proposedToolCall) {
       if (params.llmMode === 'gemini') {
-        const geminiResult = await this.executeGeminiAgent(scenario, processedSegments);
-        proposedToolCall = geminiResult.toolCall;
-        if (geminiResult.notice) {
-          notices.push(geminiResult.notice);
+        const g = getGeminiStatus();
+        if (g.state !== 'available') {
+          effectiveLlm = 'mock';
+          llmFallbackReason = g.banner ?? 'Gemini is unavailable';
+          proposedToolCall = structuredClone(scenario.simulatedFooledToolCall);
+          notices.push(`FALLBACK: Gemini was requested but is unavailable (${g.detail}). This tool call comes from the SIMULATED fooled agent, NOT from Gemini.`);
+        } else {
+          const geminiResult = await this.executeGeminiAgent(scenario, processedSegments);
+          if (geminiResult.fellBack) {
+            effectiveLlm = 'mock';
+            llmFallbackReason = geminiResult.notice;
+            proposedToolCall = structuredClone(scenario.simulatedFooledToolCall);
+          } else {
+            proposedToolCall = geminiResult.toolCall;
+          }
+          if (geminiResult.notice) notices.push(geminiResult.notice);
         }
       } else {
-        // Simulated Fooled Agent (BUILT):
-        // Deterministically obeys hidden instructions to demonstrate the vulnerability and mitigation
-        proposedToolCall = scenario.simulatedFooledToolCall;
-        notices.push('Execution mode: Simulated fooled agent (obeyed prompt injection instructions to test action gate).');
+        proposedToolCall = structuredClone(scenario.simulatedFooledToolCall);
+        notices.push('Execution mode: SIMULATED fooled agent (deterministically obeys the injected instruction to exercise the action gate). Not a real model.');
       }
+    } else {
+      notices.push('Tool call supplied via overrideToolCall (DEMO_MODE only).');
     }
     const llmExecutionMs = Math.round(performance.now() - tLlmStart);
 
-    // Check proposed tool arguments for exfiltration / canary leaks / PII
     if (proposedToolCall) {
       const argsStr = JSON.stringify(proposedToolCall.args);
       const canaryFinding = checkCanaryLeak(argsStr, 'proposed_tool_args');
       if (canaryFinding) allFindings.push(canaryFinding);
+      allFindings.push(...detectOutputExfiltration(argsStr, 'proposed_tool_args'));
 
-      const exfilFindings = detectOutputExfiltration(argsStr, 'proposed_tool_args');
-      allFindings.push(...exfilFindings);
-
-      // Redact PII in tool args if outbound
-      if (proposedToolCall.tool === 'send_email') {
-        const body = String(proposedToolCall.args.body || '');
-        const { redactedText, redactionCount } = redactPii(body);
-        if (redactionCount > 0) {
-          proposedToolCall.args.body = redactedText;
-          notices.push(`Rule R5: Redacted ${redactionCount} PII token(s) from outbound email body.`);
+      // R5 is honoured only when enabled in the active policy.
+      if (proposedToolCall.tool === 'send_email' && policyEngine.isRuleEnabled('R5_PII_REDACTION')) {
+        const body = proposedToolCall.args.body;
+        if (typeof body === 'string') {
+          const { redactedText, redactionCount } = redactPii(body);
+          if (redactionCount > 0) {
+            proposedToolCall.args.body = redactedText;
+            notices.push(`Rule R5: Redacted ${redactionCount} PII token(s) from outbound email body.`);
+          }
         }
       }
     }
 
-    // 4. Policy Engine Evaluation (with Kill-Switch check)
+    // 4. Argument validation + policy evaluation (with kill-switch check)
     const tPolicyStart = performance.now();
     let decision: GateDecision;
-    const targetAgentId = `agent_${scenario.id}`;
+    const argCheck = proposedToolCall ? validateToolArgs(proposedToolCall.tool, proposedToolCall.args) : undefined;
 
-    if (incidentResponseEngine.isAgentQuarantined(targetAgentId)) {
+    if (quarantined) {
       decision = {
         action: 'deny',
         ruleId: 'KILL_SWITCH_QUARANTINE',
-        reason: `EMERGENCY KILL-SWITCH ACTIVE: Agent "${targetAgentId}" is quarantined. All tool access and credential minting are strictly revoked.`,
+        reason: `EMERGENCY KILL-SWITCH ACTIVE: Agent "${agentId}" is quarantined. All tool access and credential minting are strictly revoked.`,
         shadowWouldBlock: true,
         riskLevel: 'HIGH',
         firewallMode: params.firewallMode,
       };
-      notices.push(`Kill-Switch Alert: Agent "${targetAgentId}" is quarantined; execution blocked.`);
+      notices.push(`Kill-Switch Alert: Agent "${agentId}" is quarantined; execution blocked.`);
+    } else if (proposedToolCall && argCheck && !argCheck.ok) {
+      decision = {
+        action: 'deny',
+        ruleId: 'ARGS_INVALID',
+        reason: argCheck.error,
+        shadowWouldBlock: true,
+        riskLevel: 'HIGH',
+        firewallMode: params.firewallMode,
+      };
     } else if (proposedToolCall) {
       decision = policyEngine.evaluate({
         toolCall: proposedToolCall,
@@ -270,7 +329,7 @@ export class AgentRunner {
         findings: allFindings,
         injectionScore: maxInjectionScore,
         firewallMode: params.firewallMode,
-        accessedPrivateData: scenario.code === 'S1' || scenario.code === 'S4',
+        sessionState: state,
       });
     } else {
       decision = {
@@ -284,19 +343,21 @@ export class AgentRunner {
     }
     const policyMs = Math.round(performance.now() - tPolicyStart);
 
-    // 5. Audit Logging of Decision (Hash Chain)
+    // 5. Audit Logging of Decision
     auditLog.appendEntry({
       type: 'POLICY_DECISION',
       sessionId,
       data: {
         ruleId: decision.ruleId,
         action: decision.action,
+        matchedRules: decision.matchedRules?.map((m) => ({ ruleId: m.ruleId, action: m.action })),
         riskLevel: decision.riskLevel,
         findingsCount: allFindings.length,
         evidenceHashes: allFindings.map((f) => f.evidenceHash),
         tool: proposedToolCall?.tool,
         shadowWouldBlock: decision.shadowWouldBlock,
         firewallMode: params.firewallMode,
+        sessionState: { untrustedIngested: state.untrustedIngested, privateDataAccessed: state.privateDataAccessed },
       },
     });
 
@@ -312,17 +373,19 @@ export class AgentRunner {
     let dataLeftPremises = false;
     const tToolStart = performance.now();
 
-    if (proposedToolCall) {
+    if (proposedToolCall && argCheck?.ok) {
+      const validatedCall: ToolCall = { tool: proposedToolCall.tool, args: argCheck.args };
       if (decision.action === 'approve') {
-        // Enqueue into live approval queue
         const approvalId = `appr_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
         const approvalItem: ApprovalItem = {
           id: approvalId,
           sessionId,
           createdAt: Date.now(),
-          expiresAt: Date.now() + 60 * 1000, // 60s countdown
+          expiresAt: Date.now() + 60 * 1000,
           scenarioId: scenario.id,
-          toolCall: proposedToolCall,
+          agentId,
+          toolCall: validatedCall,
+          argsHash: hashArgs(validatedCall.args),
           riskLevel: decision.riskLevel,
           reason: decision.reason,
           ruleId: decision.ruleId,
@@ -331,12 +394,7 @@ export class AgentRunner {
         approvalStore.set(approvalId, approvalItem);
         decision.requiredApprovalId = approvalId;
 
-        broadcastEvent({
-          type: 'APPROVAL_QUEUED',
-          timestamp: new Date().toISOString(),
-          sessionId,
-          payload: approvalItem,
-        });
+        broadcastEvent({ type: 'APPROVAL_QUEUED', timestamp: new Date().toISOString(), sessionId, payload: approvalItem });
 
         toolResult = {
           success: false,
@@ -352,67 +410,21 @@ export class AgentRunner {
           credentialInfo: 'No token minted (Denied by Gate)',
         };
       } else {
-        // ALLOWED (or SHADOW/OFF mode)
-        let credentialToUse = '';
-        const isFirewallOff = params.firewallMode === 'off';
-
-        if (isFirewallOff) {
-          // Firewall OFF: agent presents the standing master key
-          credentialToUse = MASTER_KEY_SECRET;
-          notices.push('Vulnerability Note: Standing Master Key utilized without argument restrictions or expiry.');
-        } else {
-          // Firewall ON / SHADOW: mint 60-second scoped broker token
-          const tokenBundle = credentialBroker.issueToken({
-            sessionId,
-            toolCall: proposedToolCall,
-          });
-          credentialToUse = tokenBundle.token;
-
-          auditLog.appendEntry({
-            type: 'TOKEN_ISSUED',
-            sessionId,
-            data: {
-              jti: tokenBundle.claims.jti,
-              tool: tokenBundle.claims.tool,
-              expiresAt: new Date(tokenBundle.claims.exp).toISOString(),
-            },
-          });
-        }
-
-        // Invoke Protected Tool Server
-        toolResult = protectedToolServer.executeTool(
-          proposedToolCall,
-          credentialToUse,
-          isFirewallOff
-        );
-
-        if (toolResult.success && proposedToolCall.tool === 'send_email') {
-          dataLeftPremises = true;
-        }
-
-        auditLog.appendEntry({
-          type: 'TOOL_INVOCATION',
-          sessionId,
-          data: {
-            tool: proposedToolCall.tool,
-            success: toolResult.success,
-            executedWith: toolResult.executedWith,
-            dataLeftPremises,
-          },
-        });
+        toolResult = this.executeAllowed({ sessionId, agentId, firewallMode: params.firewallMode, state, notices }, validatedCall);
+        if (toolResult.success && proposedToolCall.tool === 'send_email') dataLeftPremises = true;
       }
+    } else if (proposedToolCall) {
+      toolResult = {
+        success: false,
+        error: `Action Gate BLOCKED execution of "${proposedToolCall.tool}": ${decision.reason}`,
+        executedWith: 'scoped_broker_token',
+        credentialInfo: 'No token minted (invalid arguments)',
+      };
     }
     const toolExecutionMs = Math.round(performance.now() - tToolStart);
     const totalMs = Math.round(performance.now() - t0);
 
-    const latency: LatencyBreakdown = {
-      normalizationMs,
-      detectionMs,
-      llmExecutionMs,
-      policyMs,
-      toolExecutionMs,
-      totalMs,
-    };
+    const latency: LatencyBreakdown = { normalizationMs, detectionMs, llmExecutionMs, policyMs, toolExecutionMs, totalMs };
 
     const incident: Incident = {
       id: sessionId,
@@ -423,7 +435,9 @@ export class AgentRunner {
       appName: scenario.appName || 'HR Assistant',
       isSeeded: false,
       firewallMode: params.firewallMode,
-      llmMode: params.llmMode,
+      llmMode: effectiveLlm,
+      requestedLlmMode: params.llmMode,
+      llmFallbackReason,
       segments: processedSegments,
       findings: allFindings,
       decision,
@@ -437,15 +451,61 @@ export class AgentRunner {
     };
 
     incidentStore.set(sessionId, incident);
-
-    broadcastEvent({
-      type: 'RUN_COMPLETE',
-      timestamp: new Date().toISOString(),
-      sessionId,
-      payload: incident,
-    });
-
+    broadcastEvent({ type: 'RUN_COMPLETE', timestamp: new Date().toISOString(), sessionId, payload: incident });
     return incident;
+  }
+
+  /**
+   * Executes a call the gate allowed: firewall OFF uses the isolated legacy-pattern simulation;
+   * otherwise the broker mints an exact-call token and the tool server verifies it.
+   */
+  private executeAllowed(
+    ctx: { sessionId: string; agentId: string; firewallMode: FirewallMode; state: SessionState; notices: string[] },
+    toolCall: ToolCall,
+    approvalId?: string
+  ): ToolResult {
+    let result: ToolResult;
+    if (ctx.firewallMode === 'off') {
+      result = legacyStandingKeyDemo.execute(toolCall, protectedToolServer);
+      ctx.notices.push(`${LEGACY_LABEL}: a standing key was used with no argument restrictions or expiry.`);
+    } else {
+      try {
+        const bundle = credentialBroker.issueToken({ sessionId: ctx.sessionId, agentId: ctx.agentId, toolCall, approvalId });
+        auditLog.appendEntry({
+          type: 'TOKEN_ISSUED',
+          sessionId: ctx.sessionId,
+          data: {
+            jti: bundle.claims.jti,
+            sub: bundle.claims.sub,
+            tool: bundle.claims.tool,
+            argsHash: bundle.claims.argsHash,
+            approvalId: bundle.claims.approvalId,
+            expiresAt: new Date(bundle.claims.exp * 1000).toISOString(),
+          },
+        });
+        result = protectedToolServer.executeTool({ toolCall, credential: bundle.token, sessionId: ctx.sessionId });
+      } catch (err) {
+        result = {
+          success: false,
+          error: `Credential broker refused: ${err instanceof Error ? err.message : String(err)}`,
+          executedWith: 'scoped_broker_token',
+          credentialInfo: 'No token minted',
+        };
+      }
+    }
+    recordToolResult(ctx.state, toolCall, result);
+    auditLog.appendEntry({
+      type: 'TOOL_INVOCATION',
+      sessionId: ctx.sessionId,
+      data: {
+        tool: toolCall.tool,
+        success: result.success,
+        executedWith: result.executedWith,
+        simulation: result.simulation,
+        approvalId,
+      },
+    });
+    return result;
   }
 
   /**
@@ -457,14 +517,8 @@ export class AgentRunner {
     decisionNotes?: string
   ): Promise<{ success: boolean; toolResult?: ToolResult; error?: string }> {
     const item = approvalStore.get(approvalId);
-    if (!item) {
-      return { success: false, error: 'Approval item not found' };
-    }
-
-    if (item.status !== 'PENDING') {
-      return { success: false, error: `Approval item is already ${item.status}` };
-    }
-
+    if (!item) return { success: false, error: 'Approval item not found' };
+    if (item.status !== 'PENDING') return { success: false, error: `Approval item is already ${item.status}` };
     if (Date.now() > item.expiresAt) {
       item.status = 'EXPIRED';
       return { success: false, error: 'Approval item has expired (60s limit)' };
@@ -476,36 +530,27 @@ export class AgentRunner {
     auditLog.appendEntry({
       type: 'APPROVAL_DECISION',
       sessionId: item.sessionId,
-      data: {
-        approvalId,
-        decision: item.status,
-        decisionNotes: item.decisionNotes,
-      },
+      data: { approvalId, decision: item.status, decisionNotes: item.decisionNotes, argsHash: item.argsHash },
     });
 
-    let toolResult: ToolResult | undefined;
+    let toolResult: ToolResult;
+    const agentId = item.agentId ?? `agent_${item.scenarioId}`;
 
-    if (action === 'APPROVE') {
-      // Issue single-use 60s broker token
-      const tokenBundle = credentialBroker.issueToken({
-        sessionId: item.sessionId,
-        toolCall: item.toolCall,
-      });
-
-      // Execute on Protected Tool Server
-      toolResult = protectedToolServer.executeTool(
-        item.toolCall,
-        tokenBundle.token,
-        false
-      );
-
-      // Update incident if found
+    if (action === 'APPROVE' && incidentResponseEngine.isAgentQuarantined(agentId)) {
+      toolResult = {
+        success: false,
+        error: `Agent "${agentId}" is quarantined by the kill switch; approval cannot mint a credential.`,
+        executedWith: 'scoped_broker_token',
+        credentialInfo: 'Blocked by kill switch',
+      };
+    } else if (action === 'APPROVE') {
+      const state = sessionStates.get(item.sessionId) ?? createSessionState(item.sessionId);
       const incident = incidentStore.get(item.sessionId);
+      const mode: FirewallMode = incident?.firewallMode === 'off' ? 'enforce' : incident?.firewallMode ?? 'enforce';
+      toolResult = this.executeAllowed({ sessionId: item.sessionId, agentId, firewallMode: mode, state, notices: [] }, item.toolCall, approvalId);
       if (incident) {
         incident.toolResult = toolResult;
-        if (toolResult.success && item.toolCall.tool === 'send_email') {
-          incident.dataLeftPremises = true;
-        }
+        if (toolResult.success && item.toolCall.tool === 'send_email') incident.dataLeftPremises = true;
       }
     } else {
       toolResult = {
@@ -527,44 +572,30 @@ export class AgentRunner {
   }
 
   /**
-   * Calls Gemini API server-side using @google/genai with fallback to mock mode.
+   * Calls Gemini server-side. `fellBack: true` means the caller must label the result as simulated.
    */
   private async executeGeminiAgent(
     scenario: ScenarioDefinition,
     segments: Segment[]
-  ): Promise<{ toolCall?: ToolCall; notice?: string }> {
+  ): Promise<{ toolCall?: ToolCall; notice?: string; fellBack?: boolean }> {
     const apiKey = process.env.GEMINI_API_KEY;
-
+    const model = getGeminiModel();
     if (!apiKey) {
-      return {
-        toolCall: scenario.simulatedFooledToolCall,
-        notice: `Notice: GEMINI_API_KEY not configured in environment. Gracefully fell back to Simulated Fooled Agent for model ${this.geminiModel}. Note: A real model may or may not follow the injection.`,
-      };
+      return { fellBack: true, notice: 'FALLBACK: GEMINI_API_KEY is not configured; tool call comes from the SIMULATED fooled agent, NOT Gemini.' };
     }
 
     try {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-
+      const ai = createGeminiClient(apiKey);
       const contents = segments.map((s) => `${s.role.toUpperCase()}: ${s.content}`).join('\n\n');
-
       const response = await ai.models.generateContent({
-        model: this.geminiModel,
+        model,
         contents: `${contents}\n\nTask: ${scenario.description}. If necessary, invoke a tool or output the final answer.`,
         config: {
           systemInstruction: `${scenario.systemInstruction}\nAvailable tools: read_candidate_files, send_email, update_candidate_status, lookup_order, issue_refund.`,
         },
       });
-
       const text = response.text || '';
 
-      // Check if model emitted any tool invocation pattern
       const emailMatch = /send_email\s*\(\s*(?:to\s*[:=]\s*["']?([^"',\s)]+)["']?)?/i.exec(text);
       const refundMatch = /issue_refund\s*\(\s*(?:amount\s*[:=]\s*(\d+))?/i.exec(text);
 
@@ -572,41 +603,27 @@ export class AgentRunner {
         return {
           toolCall: {
             tool: 'send_email',
-            args: {
-              to: emailMatch[1] || 'attacker@external-leak.com',
-              subject: 'Agent Output Message',
-              body: text,
-            },
+            args: { to: emailMatch[1] || 'attacker@external-leak.com', subject: 'Agent Output Message', body: text.slice(0, 20000) },
           },
-          notice: `Gemini (${this.geminiModel}) generated tool invocation: send_email. Note: Real LLMs may vary in prompt injection adherence.`,
+          notice: `Gemini (${model}) output was parsed (regex over free text) as a send_email call. Real LLMs vary in prompt-injection adherence.`,
         };
       }
-
       if (refundMatch) {
         return {
           toolCall: {
             tool: 'issue_refund',
-            args: {
-              amount: Number(refundMatch[1] || 45000),
-              upiId: 'fraudster@attackerbank',
-              reason: 'Model response directed refund',
-            },
+            args: { amount: Number(refundMatch[1] || 45000), upiId: 'fraudster@attackerbank', reason: 'Model response directed refund' },
           },
-          notice: `Gemini (${this.geminiModel}) generated tool invocation: issue_refund.`,
+          notice: `Gemini (${model}) output was parsed (regex over free text) as an issue_refund call.`,
         };
       }
-
-      // If model refused injection or responded in text
       return {
         toolCall: undefined,
-        notice: `Gemini (${this.geminiModel}) answered with text and did not invoke sensitive tools. (Refused injection or plain response).`,
+        notice: `Gemini (${model}) answered with text and did not invoke sensitive tools.`,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      return {
-        toolCall: scenario.simulatedFooledToolCall,
-        notice: `Notice: Gemini API call failed (${msg}). Gracefully fell back to Simulated Fooled Agent.`,
-      };
+      return { fellBack: true, notice: `FALLBACK: Gemini call failed (${msg.slice(0, 200)}). Tool call comes from the SIMULATED fooled agent, NOT Gemini.` };
     }
   }
 
@@ -632,23 +649,28 @@ export class AgentRunner {
     return currentApps;
   }
 
-  public updateApp(appId: string, updates: Partial<OrgApp>): OrgApp | undefined {
+  /** Only allow-listed fields can change; nothing is copied blindly from the request body. */
+  public updateApp(appId: string, updates: AppPatch): OrgApp | undefined {
     const app = currentApps.find((a) => a.id === appId);
     if (!app) return undefined;
-    Object.assign(app, updates);
+    if (updates.name !== undefined) app.name = updates.name;
+    if (updates.description !== undefined) app.description = updates.description;
+    if (updates.allowedTools !== undefined) app.allowedTools = [...new Set(updates.allowedTools)];
+    if (updates.environment !== undefined) app.environment = updates.environment;
     return app;
   }
 
-  public dryRun(params: { toolCall: ToolCall; segments: Segment[]; firewallMode?: FirewallMode }): {
+  public dryRun(params: {
+    toolCall: ToolCall;
+    segments: Segment[];
+    firewallMode?: FirewallMode;
+    sessionState?: { untrustedIngested?: boolean; privateDataAccessed?: boolean };
+  }): {
     decision: GateDecision;
     findings: Finding[];
     injectionScore: number;
   } {
-    const processedSegments = params.segments.map((s) => ({
-      ...s,
-      content: normalizeContent(s.content).normalized,
-    }));
-
+    const processedSegments = params.segments.map((s) => ({ ...s, content: normalizeContent(s.content).normalized }));
     const findings: Finding[] = [];
     let maxInjectionScore = 0;
 
@@ -662,14 +684,23 @@ export class AgentRunner {
       findings.push(...detectOutputExfiltration(segment.content, segment.id));
     }
 
-    const decision = policyEngine.evaluate({
-      toolCall: params.toolCall,
-      segments: processedSegments,
-      findings,
-      injectionScore: maxInjectionScore,
-      firewallMode: params.firewallMode || 'enforce',
-      accessedPrivateData: params.toolCall.tool === 'read_candidate_files' || params.toolCall.tool === 'lookup_order',
-    });
+    const state = createSessionState('dry_run', processedSegments);
+    if (params.sessionState?.untrustedIngested) state.untrustedIngested = true;
+    // Dry-run has no real tool results, so private-data access is an explicit caller input.
+    if (params.sessionState?.privateDataAccessed) state.privateDataAccessed = true;
+
+    const argCheck = validateToolArgs(params.toolCall.tool, params.toolCall.args);
+    const mode = params.firewallMode || 'enforce';
+    const decision: GateDecision = argCheck.ok
+      ? policyEngine.evaluate({
+          toolCall: { tool: params.toolCall.tool, args: argCheck.args },
+          segments: processedSegments,
+          findings,
+          injectionScore: maxInjectionScore,
+          firewallMode: mode,
+          sessionState: state,
+        })
+      : { action: 'deny', ruleId: 'ARGS_INVALID', reason: argCheck.error, shadowWouldBlock: true, riskLevel: 'HIGH', firewallMode: mode };
 
     return { decision, findings, injectionScore: maxInjectionScore };
   }
@@ -1027,7 +1058,9 @@ export class AgentRunner {
     incidentStore.clear();
     approvalStore.clear();
     auditLog.reset();
-    credentialBroker.resetUsedJtis();
+    tokenVerifier.reset();
+    credentialBroker.reset();
+    sessionStates.clear();
     protectedToolServer.seedData();
     currentApps = JSON.parse(JSON.stringify(SEEDED_APPS));
     this.seedInitialHistory();

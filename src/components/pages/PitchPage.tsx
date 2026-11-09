@@ -135,11 +135,11 @@ export const PitchPage: React.FC = () => {
               </div>
               <h3 className="text-xs font-bold text-white">Scoped Token</h3>
               <p className="text-2xs text-slate-400 leading-relaxed">
-                Issues short-lived 60s HMAC token strictly binding tool, recipient, and amount constraints. Verified via timingSafeEqual. Single-use JTI prevents replay.
+                Issues a 60s Ed25519-signed token bound to tool, session and the SHA-256 of the full validated arguments. The tool server holds only the public key. Single-use JTI prevents replay.
               </p>
             </div>
             <div className="font-mono text-[10px] text-emerald-400 pt-2 border-t border-slate-800/80">
-              No standing master keys
+              No standing keys on the real path
             </div>
           </div>
 
@@ -152,9 +152,9 @@ export const PitchPage: React.FC = () => {
                 </span>
                 <span className="text-2xs font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded">AUDIT</span>
               </div>
-              <h3 className="text-xs font-bold text-white">SHA-256 Ledger</h3>
+              <h3 className="text-xs font-bold text-white">Keyed Hash-Chain Ledger</h3>
               <p className="text-2xs text-slate-400 leading-relaxed">
-                Every decision, token issuance, and tool outcome is appended to an immutable cryptographic SHA-256 hash chain with instant tamper verification.
+                Every decision, token issuance, and tool outcome is appended to a keyed hash chain; verification detects edits, deletions and reordering.
               </p>
             </div>
             <div className="font-mono text-[10px] text-purple-400 pt-2 border-t border-slate-800/80">
@@ -305,7 +305,7 @@ export const PitchPage: React.FC = () => {
             The Credential Broker Fix
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            Instead of trusting that the LLM is never fooled, we assume the LLM WILL be fooled. Tools refuse all standing keys. Tools require a single-use 60s HMAC token issued only when the Action Gate verifies policy compliance and argument bounds.
+            Instead of trusting that the LLM is never fooled, we assume the LLM WILL be fooled. The real tool server refuses standing keys and requires a single-use 60s Ed25519-signed token issued only when the Action Gate allows (or a human approves) that exact call.
           </p>
         </div>
 
@@ -315,7 +315,7 @@ export const PitchPage: React.FC = () => {
             Cryptographic Auditability
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            Every gate decision, token grant, and tool execution is linked sequentially into a SHA-256 hash chain. If an attacker modifies an old log entry, the hash chain breaks instantly and flags the exact corrupted block.
+            Every gate decision, token grant, and tool execution is linked into a keyed (HMAC-SHA256) hash chain persisted to an append-only file. Edits, deletions and reordering are detected; an attacker holding both the key and the files can still forge, so external anchoring is the production fix.
           </p>
         </div>
       </div>

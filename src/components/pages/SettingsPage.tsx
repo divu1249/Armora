@@ -330,7 +330,7 @@ export const SettingsPage: React.FC = () => {
                   <div>✓ Action Gate + Scoped Tokens</div>
                   <div>✓ Verhoeff &amp; Luhn PII Redaction</div>
                   <div>✓ 60-Second Approval Queue</div>
-                  <div>✓ SHA-256 Audit Hash Chain</div>
+                  <div>✓ Keyed Audit Hash Chain</div>
                 </div>
                 <div className="pt-2 text-center text-2xs font-mono text-cyan-400 font-semibold">
                   Illustrative pricing

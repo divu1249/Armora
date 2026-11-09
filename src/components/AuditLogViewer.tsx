@@ -83,11 +83,11 @@ export const AuditLogViewer: React.FC = () => {
               <Link2 className="w-4 h-4 text-indigo-600" />
               Cryptographic Audit Hash Chain
               <span className="text-2xs font-mono text-slate-500 font-normal">
-                [BUILT: Append-Only SHA-256 Ledger]
+                [BUILT: keyed hash chain, JSONL on disk]
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Every Action Gate decision and token issuance is recorded with SHA-256 linking: <code>Hash_n = SHA-256(Hash_{'{n-1}'} + canonical_JSON)</code>. PII is masked with HMAC-SHA256 secrets.
+              Every Action Gate decision and token issuance is recorded: <code>Hash_n = HMAC-SHA256(auditKey, Hash_{'{n-1}'} + canonical_entry)</code>. PII evidence is hashed with a server-side HMAC.
             </p>
           </div>
 
@@ -126,10 +126,10 @@ export const AuditLogViewer: React.FC = () => {
         <div className="p-3 bg-purple-50 border border-purple-200 text-purple-900 rounded-md text-xs flex items-start gap-2">
           <Info className="w-4 h-4 text-purple-600 mt-0.5 shrink-0" />
           <div>
-            <strong className="font-semibold">Cryptographic Guarantee &amp; Roadmap Anchor: </strong>
-            Hash chain verification proves sequential continuity and detects any retroactive modification of past entries.
+            <strong className="font-semibold">Integrity claims &amp; limits: </strong>
+            Hash-chained and keyed; detects edits, deletions and reordering; an attacker with both the key and the files can still forge; external anchoring is the production fix.
             <span className="text-purple-700 ml-1">
-              Note: Tail truncation (dropping trailing recent blocks) is not detectable without an external witness anchor or public transparency log <span className="font-mono text-2xs font-semibold">[ROADMAP]</span>.
+              Signed checkpoints are written to a separate anchors file and used to detect tail truncation. This is a local witness simulation; production would use an external transparency log or RFC 3161 timestamping.
             </span>
           </div>
         </div>
@@ -160,7 +160,7 @@ export const AuditLogViewer: React.FC = () => {
               ) : (
                 <>
                   <AlertTriangle className="w-4 h-4 text-rose-600" />
-                  <span>TAMPER DETECTED: Hash Mismatch at Block #{report.tamperedEntry?.seq}</span>
+                  <span>INTEGRITY FAILURE: {report.reason ?? 'hash mismatch'}{report.tamperedEntry ? ` (block #${report.tamperedEntry.seq})` : ''}</span>
                 </>
               )}
             </div>

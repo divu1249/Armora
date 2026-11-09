@@ -1,52 +1,22 @@
 import { load } from 'js-yaml';
+import { z } from 'zod';
 import {
   FirewallMode,
+  GateAction,
   GateDecision,
+  MatchedRule,
   RiskLevel,
   Segment,
   Finding,
+  SessionState,
   ToolCall,
-  ToolTaxonomy,
   PolicyVersion,
 } from './types.ts';
+import { TOOL_TAXONOMY, UNKNOWN_TOOL_TAXONOMY } from './taxonomy.ts';
+import { checkRecipientsAllowed, normalizeDomain } from './emailRecipients.ts';
+import { isUntrusted } from './sessionState.ts';
 
-export const TOOL_TAXONOMY: Record<string, ToolTaxonomy> = {
-  read_candidate_files: {
-    readsPrivateData: true,
-    writes: false,
-    irreversible: false,
-    sendsExternal: false,
-    privilege: 'confidential',
-  },
-  send_email: {
-    readsPrivateData: false,
-    writes: true,
-    irreversible: true,
-    sendsExternal: true,
-    privilege: 'high',
-  },
-  update_candidate_status: {
-    readsPrivateData: false,
-    writes: true,
-    irreversible: false,
-    sendsExternal: false,
-    privilege: 'standard',
-  },
-  lookup_order: {
-    readsPrivateData: true,
-    writes: false,
-    irreversible: false,
-    sendsExternal: false,
-    privilege: 'standard',
-  },
-  issue_refund: {
-    readsPrivateData: false,
-    writes: true,
-    irreversible: true,
-    sendsExternal: true,
-    privilege: 'critical',
-  },
-};
+export { TOOL_TAXONOMY };
 
 export const DEFAULT_POLICY_YAML = `
 version: "1.0.0"
@@ -59,12 +29,12 @@ rules:
 
   - id: "R2_TRIFECTA"
     name: "Trifecta Guard (Private Data + Untrusted Content + External Exfil)"
-    description: "Denies tool calls when session combines private data access, untrusted content, and external communication, unless explicitly approved."
+    description: "Denies tool calls when the session state shows private data was actually read, untrusted content was ingested, and the tool communicates externally."
     enabled: true
 
   - id: "R3_DOMAIN_ALLOWLIST"
     name: "Email Recipient Domain Allow-List"
-    description: "Denies email tool calls to unauthorized domains outside example.com or company.internal."
+    description: "Denies email tool calls unless EVERY to/cc/bcc address is on an allowed domain (exact match)."
     enabled: true
     allowedDomains:
       - "example.com"
@@ -156,210 +126,320 @@ rules:
   },
 ];
 
-export interface ParsedPolicy {
-  version: string;
-  name: string;
-  rules: Array<{
-    id: string;
-    name: string;
-    description: string;
-    enabled: boolean;
-    allowedDomains?: string[];
-    maxRefundAmount?: number;
-    allowedUpiSuffixes?: string[];
-  }>;
+// ---------------------------------------------------------------------------
+// Policy schema (zod). Unknown rule ids and unknown fields are rejected.
+// ---------------------------------------------------------------------------
+
+const ruleBase = {
+  name: z.string().min(1).max(200),
+  description: z.string().max(1000),
+  enabled: z.boolean(),
+};
+
+const domainString = z
+  .string()
+  .min(1)
+  .max(253)
+  .refine((d) => normalizeDomain(d) !== null, { message: 'must be a valid domain name' });
+
+const upiSuffix = z.string().regex(/^@[a-z0-9]{2,32}$/i, 'must look like "@okaxis"');
+
+const RuleSchema = z.discriminatedUnion('id', [
+  z.object({ id: z.literal('R1'), ...ruleBase }).strict(),
+  z.object({ id: z.literal('R2_TRIFECTA'), ...ruleBase }).strict(),
+  z
+    .object({
+      id: z.literal('R3_DOMAIN_ALLOWLIST'),
+      ...ruleBase,
+      allowedDomains: z.array(domainString).min(1).max(100).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.literal('R4_FINANCIAL_GUARD'),
+      ...ruleBase,
+      maxRefundAmount: z.number().finite().positive().optional(),
+      allowedUpiSuffixes: z.array(upiSuffix).min(1).max(100).optional(),
+    })
+    .strict(),
+  z.object({ id: z.literal('R5_PII_REDACTION'), ...ruleBase }).strict(),
+  z.object({ id: z.literal('R6_RISK_ADAPTIVE_GATE'), ...ruleBase }).strict(),
+]);
+
+export const PolicySchema = z
+  .object({
+    version: z.string().min(1).max(50),
+    name: z.string().min(1).max(200),
+    rules: z.array(RuleSchema).min(1).max(20),
+  })
+  .strict()
+  .superRefine((p, ctx) => {
+    const seen = new Set<string>();
+    p.rules.forEach((r, i) => {
+      if (seen.has(r.id)) ctx.addIssue({ code: 'custom', path: ['rules', i, 'id'], message: `duplicate rule id ${r.id}` });
+      seen.add(r.id);
+    });
+  });
+
+export type ParsedPolicy = z.infer<typeof PolicySchema>;
+export type PolicyRuleId = ParsedPolicy['rules'][number]['id'];
+export const KNOWN_RULE_IDS: PolicyRuleId[] = [
+  'R1',
+  'R2_TRIFECTA',
+  'R3_DOMAIN_ALLOWLIST',
+  'R4_FINANCIAL_GUARD',
+  'R5_PII_REDACTION',
+  'R6_RISK_ADAPTIVE_GATE',
+];
+
+const MAX_POLICY_BYTES = 100_000;
+
+export function parsePolicyYaml(
+  yamlContent: unknown
+): { ok: true; policy: ParsedPolicy; error?: undefined } | { ok: false; error: string; policy?: undefined } {
+  if (typeof yamlContent !== 'string') return { ok: false, error: 'Policy must be a YAML string' };
+  if (yamlContent.length > MAX_POLICY_BYTES) return { ok: false, error: 'Policy too large' };
+  let loaded: unknown;
+  try {
+    loaded = load(yamlContent);
+  } catch (err) {
+    return { ok: false, error: `Invalid YAML: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const parsed = PolicySchema.safeParse(loaded);
+  if (!parsed.success) {
+    const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
+    return { ok: false, error: `Policy validation failed: ${msg}` };
+  }
+  return { ok: true, policy: parsed.data };
+}
+
+// ---------------------------------------------------------------------------
+// Engine
+// ---------------------------------------------------------------------------
+
+const SEVERITY: Record<GateAction, number> = { allow: 0, approve: 1, deny: 2 };
+/** Tie-break among rules with equal restrictiveness (lower index wins). */
+const PRIORITY = [
+  'R6_RISK_ADAPTIVE_GATE',
+  'R2_TRIFECTA',
+  'R3_DOMAIN_ALLOWLIST',
+  'R4_FINANCIAL_GUARD',
+  'R1_EXTERNAL_UNTRUSTED',
+];
+
+const DEFAULT_ALLOWED_DOMAINS = ['example.com', 'company.internal'];
+const DEFAULT_MAX_REFUND = 2000;
+const DEFAULT_UPI_SUFFIXES = ['@okaxis', '@okhdfcbank', '@paytm', '@icici'];
+
+interface AnyRule {
+  id: string;
+  enabled: boolean;
+  allowedDomains?: string[];
+  maxRefundAmount?: number;
+  allowedUpiSuffixes?: string[];
+}
+
+export interface EvaluateParams {
+  toolCall: ToolCall;
+  segments: Segment[];
+  findings: Finding[];
+  injectionScore: number;
+  firewallMode: FirewallMode;
+  sessionState?: SessionState;
 }
 
 export class PolicyEngine {
   private activePolicyYaml: string = DEFAULT_POLICY_YAML;
   private parsedPolicy: ParsedPolicy;
 
-  constructor() {
-    this.parsedPolicy = this.parseAndValidate(this.activePolicyYaml);
+  constructor(yaml: string = DEFAULT_POLICY_YAML) {
+    const r = parsePolicyYaml(yaml);
+    if (!r.ok) throw new Error(`Built-in policy is invalid: ${r.error}`);
+    this.activePolicyYaml = yaml;
+    this.parsedPolicy = r.policy;
   }
 
   public getPolicyYaml(): string {
     return this.activePolicyYaml;
   }
 
-  public setPolicyYaml(newYaml: string): { success: boolean; error?: string } {
+  public getPolicy(): ParsedPolicy {
+    return this.parsedPolicy;
+  }
+
+  /** Invalid policies are rejected; the previously active policy stays in force. */
+  public setPolicyYaml(newYaml: unknown): { success: boolean; error?: string; warnings?: string[] } {
+    const r = parsePolicyYaml(newYaml);
+    if (!r.ok) return { success: false, error: r.error };
+    this.parsedPolicy = r.policy;
+    this.activePolicyYaml = newYaml as string;
+    const present = new Set(r.policy.rules.map((x) => x.id));
+    const warnings = KNOWN_RULE_IDS.filter((id) => !present.has(id)).map(
+      (id) => `Rule ${id} is not listed in this policy and is therefore NOT enforced.`
+    );
+    return { success: true, warnings };
+  }
+
+  /** A rule is active only if it is listed AND enabled. */
+  public isRuleEnabled(id: PolicyRuleId): boolean {
+    return this.parsedPolicy.rules.some((r) => r.id === id && r.enabled);
+  }
+
+  private rule(id: PolicyRuleId): AnyRule | undefined {
+    return this.parsedPolicy.rules.find((r) => r.id === id && r.enabled) as AnyRule | undefined;
+  }
+
+  /** Never throws and never allows on error: any exception becomes deny/POLICY_ERROR. */
+  public evaluate(params: EvaluateParams): GateDecision {
     try {
-      this.parsedPolicy = this.parseAndValidate(newYaml);
-      this.activePolicyYaml = newYaml;
-      return { success: true };
-    } catch (err: unknown) {
+      return this.evaluateUnsafe(params);
+    } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, error: msg };
+      const reason = `Policy evaluation error (fail-closed): ${msg}`;
+      return {
+        action: 'deny',
+        ruleId: 'POLICY_ERROR',
+        reason,
+        shadowWouldBlock: true,
+        riskLevel: 'HIGH',
+        firewallMode: (params as EvaluateParams | undefined)?.firewallMode ?? 'enforce',
+        matchedRules: [{ ruleId: 'POLICY_ERROR', action: 'deny', reason }],
+      };
     }
   }
 
-  private parseAndValidate(yamlContent: string): ParsedPolicy {
-    const loaded = load(yamlContent) as ParsedPolicy;
-    if (!loaded || typeof loaded !== 'object') {
-      throw new Error('Invalid YAML format: expected an object');
+  private evaluateUnsafe(params: EvaluateParams): GateDecision {
+    const { toolCall, segments, findings, injectionScore, firewallMode, sessionState } = params;
+    if (!toolCall || typeof toolCall.tool !== 'string' || !toolCall.args || typeof toolCall.args !== 'object') {
+      throw new Error('malformed tool call');
     }
-    if (!loaded.version || !loaded.rules || !Array.isArray(loaded.rules)) {
-      throw new Error('Policy must declare "version" and a "rules" array');
+    if (typeof injectionScore !== 'number' || !Number.isFinite(injectionScore)) {
+      throw new Error('injectionScore must be a finite number');
     }
-    return loaded;
-  }
+    if (!Array.isArray(segments) || !Array.isArray(findings)) throw new Error('segments/findings must be arrays');
 
-  /**
-   * Evaluates a proposed tool call within the session context.
-   */
-  public evaluate(params: {
-    toolCall: ToolCall;
-    segments: Segment[];
-    findings: Finding[];
-    injectionScore: number;
-    firewallMode: FirewallMode;
-    accessedPrivateData?: boolean;
-  }): GateDecision {
-    const { toolCall, segments, findings, injectionScore, firewallMode, accessedPrivateData } = params;
+    const taxonomy = TOOL_TAXONOMY[toolCall.tool] ?? UNKNOWN_TOOL_TAXONOMY;
 
-    const taxonomy = TOOL_TAXONOMY[toolCall.tool] || {
-      readsPrivateData: false,
-      writes: true,
-      irreversible: true,
-      sendsExternal: true,
-      privilege: 'critical',
-    };
-
-    // Calculate session risk level: Risk-adaptive gating
     let riskLevel: RiskLevel = 'LOW';
-    const hasCriticalFinding = findings.some((f) => f.severity === 'CRITICAL');
-    const hasHighFinding = findings.some((f) => f.severity === 'HIGH');
+    const hasCritical = findings.some((f) => f.severity === 'CRITICAL');
+    const hasHigh = findings.some((f) => f.severity === 'HIGH');
+    if (injectionScore >= 0.8 || hasCritical) riskLevel = 'HIGH';
+    else if (injectionScore >= 0.4 || hasHigh) riskLevel = 'MEDIUM';
 
-    if (injectionScore >= 0.8 || hasCriticalFinding) {
-      riskLevel = 'HIGH';
-    } else if (injectionScore >= 0.4 || hasHighFinding) {
-      riskLevel = 'MEDIUM';
+    const hasUntrusted = segments.some(isUntrusted) || sessionState?.untrustedIngested === true;
+    const privateDataAccessed = sessionState?.privateDataAccessed === true;
+
+    const matches: MatchedRule[] = [];
+
+    // R6: Risk-adaptive gate
+    if (this.rule('R6_RISK_ADAPTIVE_GATE') && riskLevel === 'HIGH' && taxonomy.irreversible) {
+      matches.push({
+        ruleId: 'R6_RISK_ADAPTIVE_GATE',
+        action: 'deny',
+        reason: `Session risk is HIGH (score: ${injectionScore}); irreversible tool "${toolCall.tool}" is denied by Action Gate.`,
+      });
     }
 
-    // Determine untrusted content presence
-    // UNTRUSTED = TOOL_OUTPUT, RETRIEVED_DOC, UNKNOWN
-    const hasUntrustedSegments = segments.some(
-      (s) => s.trust === 'TOOL_OUTPUT' || s.trust === 'RETRIEVED_DOC' || s.trust === 'UNKNOWN'
+    // R2: Trifecta guard, reads the session state (no scenario hard-coding)
+    if (this.rule('R2_TRIFECTA') && hasUntrusted && taxonomy.sendsExternal && privateDataAccessed) {
+      matches.push({
+        ruleId: 'R2_TRIFECTA',
+        action: 'deny',
+        reason: `Trifecta Guard Triggered: session state shows private data was read, untrusted content was ingested, and "${toolCall.tool}" communicates externally. Execution denied.`,
+      });
+    }
+
+    // R3: email recipient allow-list
+    const r3 = this.rule('R3_DOMAIN_ALLOWLIST');
+    if (r3 && toolCall.tool === 'send_email') {
+      const allowedDomains = r3.allowedDomains ?? DEFAULT_ALLOWED_DOMAINS;
+      const check = checkRecipientsAllowed(toolCall.args, allowedDomains);
+      if (!check.allowed) {
+        const detail = check.error
+          ? check.error
+          : `recipient(s) not on the allowed domain list: ${check.disallowed.join(', ')}`;
+        matches.push({
+          ruleId: 'R3_DOMAIN_ALLOWLIST',
+          action: 'deny',
+          reason: `Email recipients rejected (${detail}). Allowed domains: ${allowedDomains.join(', ')}.`,
+        });
+      }
+    }
+
+    // R4: financial guard (amount -> approve, UPI handle -> deny; deny wins inside the rule)
+    const r4 = this.rule('R4_FINANCIAL_GUARD');
+    if (r4 && toolCall.tool === 'issue_refund') {
+      const maxAmount = r4.maxRefundAmount ?? DEFAULT_MAX_REFUND;
+      const suffixes = (r4.allowedUpiSuffixes ?? DEFAULT_UPI_SUFFIXES).map((s) => s.toLowerCase());
+      const { amount, upiId } = toolCall.args;
+      const problems: string[] = [];
+      let action: GateAction = 'allow';
+
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+        action = 'deny';
+        problems.push('refund amount is missing or not a positive finite number');
+      } else if (amount > maxAmount) {
+        action = 'approve';
+        problems.push(`Refund amount INR ${amount} exceeds policy limit (INR ${maxAmount}). Human approval required.`);
+      }
+
+      const upi = typeof upiId === 'string' ? upiId.trim().toLowerCase() : '';
+      const parts = upi.split('@');
+      const handle = parts.length === 2 && parts[0] ? `@${parts[1]}` : '';
+      if (!handle || !suffixes.includes(handle)) {
+        action = 'deny';
+        problems.push(`Target UPI ID "${upi || '(missing)'}" does not match authorized banking handles (${suffixes.join(', ')}).`);
+      }
+      if (action !== 'allow') {
+        matches.push({ ruleId: 'R4_FINANCIAL_GUARD', action, reason: problems.join(' ') });
+      }
+    }
+
+    // R1: untrusted content + external tool
+    if (this.rule('R1') && hasUntrusted && taxonomy.sendsExternal) {
+      matches.push(
+        riskLevel === 'HIGH'
+          ? {
+              ruleId: 'R1_EXTERNAL_UNTRUSTED',
+              action: 'deny',
+              reason: `External transmission via "${toolCall.tool}" from untrusted session context is denied under HIGH risk.`,
+            }
+          : {
+              ruleId: 'R1_EXTERNAL_UNTRUSTED',
+              action: 'approve',
+              reason: `Untrusted content in session calling external tool "${toolCall.tool}". Human approval required.`,
+            }
+      );
+    }
+
+    matches.sort(
+      (a, b) =>
+        SEVERITY[b.action] - SEVERITY[a.action] ||
+        PRIORITY.indexOf(a.ruleId) - PRIORITY.indexOf(b.ruleId)
     );
 
-    let rawDecision: { action: 'allow' | 'deny' | 'approve'; ruleId: string; reason: string } = {
-      action: 'allow',
-      ruleId: 'DEFAULT_ALLOW',
-      reason: 'No policy restrictions triggered for tool call',
-    };
-
-    // Rule R6: Risk-Adaptive Gate: If risk level is HIGH and tool is irreversible, deny.
-    if (riskLevel === 'HIGH' && taxonomy.irreversible) {
-      rawDecision = {
-        action: 'deny',
-        ruleId: 'R6_RISK_ADAPTIVE_GATE',
-        reason: `Session risk is HIGH (score: ${injectionScore}); irreversible tool "${toolCall.tool}" is denied by Action Gate.`,
-      };
-    }
-
-    // Rule R2: Trifecta Guard
-    // Private data access + untrusted content + external communication in one session
-    else if (hasUntrustedSegments && taxonomy.sendsExternal && (accessedPrivateData || taxonomy.readsPrivateData)) {
-      rawDecision = {
-        action: 'deny',
-        ruleId: 'R2_TRIFECTA',
-        reason: `Trifecta Guard Triggered: Session combines private data access, untrusted content, and external tool "${toolCall.tool}". Execution denied.`,
-      };
-    }
-
-    // Rule R1: Untrusted content + sendsExternal => require approval (deny if HIGH risk)
-    else if (hasUntrustedSegments && taxonomy.sendsExternal) {
-      if (riskLevel === 'HIGH') {
-        rawDecision = {
-          action: 'deny',
-          ruleId: 'R1_EXTERNAL_UNTRUSTED',
-          reason: `External transmission via "${toolCall.tool}" from untrusted session context is denied under HIGH risk.`,
-        };
-      } else {
-        rawDecision = {
-          action: 'approve',
-          ruleId: 'R1_EXTERNAL_UNTRUSTED',
-          reason: `Untrusted content in session calling external tool "${toolCall.tool}". Human approval required.`,
-        };
-      }
-    }
-
-    // Rule R3: Domain allow-list check for email
-    else if (toolCall.tool === 'send_email') {
-      const recipient = String(toolCall.args.to || toolCall.args.recipient || '').toLowerCase();
-      const r3 = this.parsedPolicy.rules.find((r) => r.id === 'R3_DOMAIN_ALLOWLIST');
-      const allowedDomains = r3?.allowedDomains || ['example.com', 'company.internal'];
-      const domainMatch = allowedDomains.some((d) => recipient.endsWith(`@${d}`));
-
-      if (!domainMatch && recipient) {
-        rawDecision = {
-          action: 'deny',
-          ruleId: 'R3_DOMAIN_ALLOWLIST',
-          reason: `Recipient email "${recipient}" is not on the allowed domain list (${allowedDomains.join(', ')}).`,
-        };
-      }
-    }
-
-    // Rule R4: Financial limits for issue_refund
-    else if (toolCall.tool === 'issue_refund') {
-      const amount = Number(toolCall.args.amount || 0);
-      const upiId = String(toolCall.args.upiId || toolCall.args.upi || '').toLowerCase();
-      const r4 = this.parsedPolicy.rules.find((r) => r.id === 'R4_FINANCIAL_GUARD');
-      const maxAmount = r4?.maxRefundAmount ?? 2000;
-      const allowedSuffixes = r4?.allowedUpiSuffixes || ['@okaxis', '@okhdfcbank', '@paytm', '@icici'];
-
-      if (amount > maxAmount) {
-        rawDecision = {
-          action: 'approve',
-          ruleId: 'R4_FINANCIAL_GUARD',
-          reason: `Refund amount INR ${amount} exceeds policy limit (INR ${maxAmount}). Human approval required.`,
-        };
-      } else if (upiId && !allowedSuffixes.some((sfx) => upiId.endsWith(sfx))) {
-        rawDecision = {
-          action: 'deny',
-          ruleId: 'R4_FINANCIAL_GUARD',
-          reason: `Target UPI ID "${upiId}" does not match authorized banking handles (${allowedSuffixes.join(', ')}).`,
-        };
-      }
-    }
-
-    // Apply Firewall Mode logic:
-    // OFF: always allows execution, noting that firewall was bypassed
-    // SHADOW: logs what would be blocked, but allows execution
-    // ENFORCE: strictly enforces decision
-    const shadowWouldBlock = rawDecision.action !== 'allow';
+    const primary: MatchedRule =
+      matches[0] ?? { ruleId: 'DEFAULT_ALLOW', action: 'allow', reason: 'No policy restrictions triggered for tool call' };
+    const shadowWouldBlock = primary.action !== 'allow';
+    const extra =
+      matches.length > 1 ? ` [+${matches.length - 1} more rule(s) matched: ${matches.slice(1).map((m) => m.ruleId).join(', ')}]` : '';
+    const base = { ruleId: primary.ruleId, shadowWouldBlock, riskLevel, firewallMode, matchedRules: matches };
 
     if (firewallMode === 'off') {
       return {
+        ...base,
         action: 'allow',
-        ruleId: rawDecision.ruleId,
-        reason: `[FIREWALL OFF] Master Key bypass. Real policy would have: ${rawDecision.action.toUpperCase()} (${rawDecision.reason})`,
-        shadowWouldBlock,
-        riskLevel,
-        firewallMode,
+        reason: `[FIREWALL OFF] Gate bypassed (legacy-pattern simulation). Real policy would have: ${primary.action.toUpperCase()} (${primary.reason})${extra}`,
       };
     }
-
     if (firewallMode === 'shadow') {
       return {
+        ...base,
         action: 'allow',
-        ruleId: rawDecision.ruleId,
-        reason: `[SHADOW MODE] Execution allowed. Gate would have: ${rawDecision.action.toUpperCase()} (${rawDecision.reason})`,
-        shadowWouldBlock,
-        riskLevel,
-        firewallMode,
+        reason: `[SHADOW MODE] Execution allowed. Gate would have: ${primary.action.toUpperCase()} (${primary.reason})${extra}`,
       };
     }
-
-    // ENFORCE MODE
-    return {
-      action: rawDecision.action,
-      ruleId: rawDecision.ruleId,
-      reason: rawDecision.reason,
-      shadowWouldBlock,
-      riskLevel,
-      firewallMode,
-    };
+    return { ...base, action: primary.action, reason: primary.reason + extra };
   }
 }
 

@@ -12,13 +12,20 @@ import {
 } from 'lucide-react';
 import { AuditEntry } from '../../../server/types.ts';
 import { VerificationReport } from '../../../server/auditLog.ts';
-import { fetchAuditLog, verifyAuditChain, simulateAuditTamper, resetSystemState } from '../../services/api.ts';
+import { fetchAuditLog, verifyAuditChain, simulateAuditTamper, resetSystemState, fetchAppConfig, fetchAuditAnchors } from '../../services/api.ts';
 
 export const AuditPage: React.FC = () => {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [report, setReport] = useState<VerificationReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState<boolean>(true);
+  const [anchors, setAnchors] = useState<Array<{ seq: number; headHash: string; ts: string }>>([]);
+
+  useEffect(() => {
+    fetchAppConfig().then((c) => setDemoMode(c.demoMode)).catch(() => undefined);
+    fetchAuditAnchors().then((a) => setAnchors(a.anchors)).catch(() => undefined);
+  }, []);
 
   const loadData = async () => {
     try {
@@ -96,11 +103,11 @@ export const AuditPage: React.FC = () => {
               <Link2 className="w-4 h-4 text-[#00e5ff]" />
               Cryptographic Audit Hash Chain
               <span className="text-3xs font-mono text-[#00f5a0] bg-[#00f5a0]/10 border border-[#00f5a0]/30 px-2 py-0.5 rounded">
-                [SHA-256 APPEND-ONLY]
+                [KEYED HASH CHAIN + LOCAL ANCHORS]
               </span>
             </h2>
             <p className="text-xs text-[#8293aa] font-mono mt-0.5">
-              Tamper-evident ledger linking decisions: <code>Hash_n = SHA-256(Hash_{'{n-1}'} + canonical_JSON)</code>.
+              Tamper-evident ledger: <code>Hash_n = HMAC-SHA256(auditKey, Hash_{'{n-1}'} + canonical_entry)</code>, persisted to JSONL and re-verified on boot.
             </p>
           </div>
 
@@ -114,6 +121,7 @@ export const AuditPage: React.FC = () => {
               <ShieldCheck className="w-3.5 h-3.5 text-[#080b12]" />
               <span>Verify Chain</span>
             </button>
+            {demoMode && (
             <button
               type="button"
               disabled={loading}
@@ -123,6 +131,7 @@ export const AuditPage: React.FC = () => {
               <Flame className="w-3.5 h-3.5 text-[#ff365d]" />
               <span>Simulate Tampering</span>
             </button>
+            )}
             <button
               type="button"
               disabled={loading}
@@ -148,12 +157,17 @@ export const AuditPage: React.FC = () => {
         <div className="p-3 bg-[#a855f7]/10 border border-[#a855f7]/30 text-[#e6edf6] rounded text-xs font-sans flex items-start gap-2.5 mb-4">
           <Info className="w-4 h-4 text-[#a855f7] mt-0.5 shrink-0" />
           <div className="leading-relaxed">
-            <strong className="text-white">Tamper Evidence &amp; Tail Truncation Note: </strong>
-            Internal verification mathematically proves sequential continuity and detects any retroactive block modification.
+            <strong className="text-white">Integrity claims &amp; limits: </strong>
+            Hash-chained and keyed; detects edits, deletions and reordering; an attacker with both the key and the files can still forge; external anchoring is the production fix.
             <span className="text-[#c084fc] ml-1">
-              Note: Tail truncation (dropping trailing blocks) is not detectable without an external witness anchor or public transparency log <span className="font-mono text-3xs font-semibold">[ROADMAP]</span>.
+              Signed checkpoints in a separate anchors file detect tail truncation: local witness simulation; production would use an external transparency log or RFC 3161 timestamping.
             </span>
           </div>
+        </div>
+
+        <div className="text-2xs font-mono text-[#8293aa] mb-3">
+          Anchors written: {anchors.length}
+          {anchors.length > 0 && ` (latest at seq ${anchors[anchors.length - 1].seq}, head ${anchors[anchors.length - 1].headHash.slice(0, 12)}...)`} · local witness simulation
         </div>
 
         {notice && (
@@ -181,7 +195,7 @@ export const AuditPage: React.FC = () => {
               ) : (
                 <>
                   <AlertTriangle className="w-4 h-4 text-[#ff365d]" />
-                  <span>TAMPER DETECTED: Hash Mismatch Pinpointed at Block #{report.tamperedEntry?.seq}</span>
+                  <span>INTEGRITY FAILURE: {report.reason ?? 'hash mismatch'}{report.tamperedEntry ? ` (block #${report.tamperedEntry.seq})` : ''}</span>
                 </>
               )}
             </div>

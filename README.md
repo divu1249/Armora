@@ -1,160 +1,132 @@
-# LLM Firewall — AI Agent Security Gateway & Action Gate
+# Armora: Action gate and credential broker for LLM agents
 
-> **Thesis**: *"Reading untrusted content should never authorize a sensitive action."*  
-> Detectors produce probabilistic risk signals; the **Action Gate & Credential Broker** establish the **deterministic boundary for tool calls routed through the gate and verified by the tool server**. Never claims 100% protection or attacker identification.
+> **Thesis**: *"Reading untrusted content should never authorize a sensitive action."*
+> Detectors are heuristics that produce risk signals. The enforcement lives in the **action gate** (policy engine) and the **credential broker + tool server**: a tool call only runs if the gate allows (or a human approves) *that exact call*, and the tool server verifies a signed token bound to it.
+> This is a prototype. It does not claim to stop every attack, and nothing here is a proof.
 
 ---
 
-## 1. System Architecture Diagram
+## 1. Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Client / SOC Console
-        UI[Enterprise SOC Dashboard]
-        Tour[3-Minute Guided Demo]
-        Split[Split-Screen Comparison]
-    end
-
-    subgraph Ingestion & Normalization
-        RawInput[Untrusted Input / Candidate Resume / User Query] --> Norm[Text Normalizer: NFKC, Zero-Width Strip, Bounded Base64]
-        Norm --> Labeler[Provenance Trust Labeler: SYSTEM, USER, RETRIEVED_DOC]
-    end
-
-    subgraph Multi-Signal Detectors
-        Labeler --> D1[Verhoeff Aadhaar Checksum]
-        Labeler --> D2[Luhn Card Validator]
-        Labeler --> D3[PAN & +91 Phone Regex]
-        Labeler --> D4[System Canary Token Scanner]
-        Labeler --> D5[Markdown Image Exfil Detector]
-        Labeler --> D6[Hinglish & Multi-Lingual Heuristics]
-    end
-
-    subgraph Deterministic Action Gate
-        D1 & D2 & D3 & D4 & D5 & D6 --> Signals[Risk Signal Aggregator]
-        Signals --> PolicyEngine[YAML Policy Engine: R1-R6 + Trifecta Guard]
-        LLM[Simulated Agent / Gemini 3.8 Flash] --> ToolCallProposed[Proposed Tool Call]
-        ToolCallProposed --> PolicyEngine
-        
-        PolicyEngine --> Decision{Gate Decision}
-        Decision -->|Allow| Broker[Credential Broker]
-        Decision -->|Approve| ApprovalQ[Human-in-the-Loop Approval Queue]
-        Decision -->|Deny| Blocked[Blocked: 0 Bytes Exfiltrated]
-        ApprovalQ -->|Approved| Broker
-        ApprovalQ -->|Denied| Blocked
-    end
-
-    subgraph Cryptographic Token Broker
-        Broker --> ScopedToken[60s Single-Use HMAC-SHA256 Token]
-        ScopedToken -.->|Binds Tool, Recipient, Amount| ToolServer[Protected Tool Server]
-    end
-
-    subgraph Tamper-Evident Ledger
-        Decision & ScopedToken & ToolServer --> AuditLog[(SHA-256 Hash Chain)]
-    end
-
-    subgraph Intelligence & Supply Chain
-        ToolServer --> RedTeam[Red-Team Suite: 24 Attacks + Adaptive Attacker]
-        AuditLog --> ThreatIntel[SimHash 64-bit Campaign Clustering]
-        AuditLog --> TrafficIntel[Negative-Binomial Traffic Baseline]
-        ToolServer --> McpVetting[MCP Pinned SHA-256 Specification Vetting]
-    end
+    Input[Segments: user / retrieved doc / tool output] --> Norm[Normalizer: NFKC, zero-width strip, bounded base64]
+    Norm --> Det[Heuristic detectors: injection, Hinglish, PII, canary, exfil]
+    Agent[Simulated fooled agent or Gemini] --> Call[Proposed tool call]
+    Call --> Schema[zod argument schema per tool]
+    Schema --> Gate[Policy engine: every enabled rule is evaluated]
+    Det --> Gate
+    State[Per-session state from real tool results] --> Gate
+    Gate -->|deny| Blocked[Blocked]
+    Gate -->|approve| Queue[Human approval queue, 60 s]
+    Gate -->|allow| Broker[Credential broker: Ed25519 private key]
+    Queue -->|approved| Broker
+    Broker --> Token[60 s token bound to tool, session, SHA-256 of exact args]
+    Token --> Tools[Protected tool server: public key only, re-validates args, single-use jti]
+    Gate --> Audit[(Keyed hash-chain audit log + signed anchors)]
+    Broker --> Audit
+    Tools --> Audit
 ```
 
----
+### Components
 
-## 2. What is Real vs. Simulated
-
-| System Component | Status Chip | What is Real (Code / Math) | What is Simulated / Seeded | Architecture Rationale |
-| :--- | :--- | :--- | :--- | :--- |
-| **Action Gate & Policy Engine** | `[BUILT]` | Real YAML parsing (`js-yaml`), deterministic rule evaluation (R1–R6), and Trifecta Guard logic. | Evaluates live in-memory request graph. | The security boundary is deterministic, not probabilistic. |
-| **Credential Broker & Tokens** | `[BUILT]` | Real HMAC-SHA256 signature generation, timing-safe verification (`crypto.timingSafeEqual`), 60s expiration enforcement, argument binding, and single-use JTI replay protection. | Token audience targets simulated internal tool server. | Standing master keys are prohibited when firewall is active. |
-| **Cryptographic Audit Log** | `[BUILT]` | Real SHA-256 append-only hash chain (`Hash_n = SHA-256(Hash_{n-1} + canonical_JSON)`). Cryptographic tamper detection and chain walking. PII values masked via server-side HMAC-SHA256. | Tail truncation is not detectable without an external witness anchor (`[ROADMAP]`). | Mathematical tamper detection without trusting local storage. |
-| **Verhoeff & Luhn Checksums** | `[BUILT]` | Exact Dihedral $D_5$ group multiplication and permutation matrices for 12-digit Indian Aadhaar validation, plus standard Luhn card validation. | Aadhaar and card numbers are purely synthetic fake test fixtures. | Eliminates false-positive redaction on random 12-digit numbers. |
-| **Heuristics & Hinglish Detectors** | `[BUILT]` | Safe ReDoS-resistant regex patterns, NFKC normalization, zero-width character stripping, bounded base64 decoding, offset preservation, and Hinglish seed set. | Seed dictionary is intentionally a compact representative seed set. | Demonstrates multi-lingual signal capture without heavy LLM latency. |
-| **Simulated Fooled Agent** | `[BUILT]` | Deterministic vulnerable agent simulating a hijacked model that obediently follows prompt injections, reliably proving Action Gate enforcement. | Simulates an obedient LLM without external API latency or variance. | Guarantees reproducible, reliable demo execution. |
-| **Gemini Server-Side Agent** | `[PROTOTYPE]` | Server-side Gemini API integration via `@google/genai` TypeScript SDK (`gemini-3.8-flash`) with automatic graceful fallback to mock mode. | Real LLM adherence to prompt injection varies probabilistically. | Real AI engine option with zero-dependency fallback. |
-| **SimHash Campaign Clustering** | `[BUILT]` | 64-bit locality-sensitive SimHash with Hamming distance matching <= 3 bits across attack payloads. | Payloads sourced from seeded synthetic attack library. | Clusters attacks across multiple independent agent apps. |
-| **Traffic Baseline Anomaly Engine**| `[PRECOMPUTED]` | Offline precomputed coefficients in JSON (negative-binomial regression with log(requests) offset, hour/weekday, and app/user random effects). Calculates expected count and 95% band. | 14 days of hourly traffic data (336 hours) pre-generated with injected anomalies. | Empirical-Bayes shrinkage ranks accounts without 1-request false spikes. |
-| **MCP Tool Specification Vetting**| `[BUILT]` | Computes SHA-256 hash of tool specifications. Detects prompt injection in tool docstrings and immediately triggers QUARANTINED state upon rug-pull simulation. | Simulated Model Context Protocol (MCP) server registry. | Demonstrates defense against tool supply-chain poisoning. |
-| **Incident Response & Legal Drafts**| `[PROTOTYPE]` | Interactive SVG blast-radius graph layout. Agent emergency kill-switch key revocation. Regulatory draft templates for CERT-In 70B and DPDP 2023 with mandatory legal disclaimers. | Prototype drafts for evaluation; not submitted to actual government portals. | "Draft for legal and security review. Not legal advice." |
-| **External Witness Anchor** | `[ROADMAP]` | Planned public transparency log or RFC 3161 timestamping service to detect tail truncation. | Currently uses in-memory hash chain. | Required to mathematically detect dropping of trailing blocks. |
-| **Shared Threat Intelligence Feed**| `[ROADMAP]` | STIX 2.1 JSON export capability is built and functional. | Multi-tenant peer-to-peer threat sharing requires production customer tenants. | Card shown as disabled roadmap item in UI. |
+| Component | Status | What the code really does | What is simulated / limited |
+| :--- | :--- | :--- | :--- |
+| Policy engine (`server/policyEngine.ts`) | `[BUILT]` | Validates policy YAML with zod (unknown fields and rule ids rejected). Evaluates **every** enabled rule, returns all matches in `matchedRules[]`, and picks the most restrictive (deny > approve > allow). Fails closed (`POLICY_ERROR` deny) on any evaluation error. | Rules not listed in a policy are *not* enforced (the save response warns). |
+| Session state (`server/sessionState.ts`) | `[BUILT]` | `{untrustedIngested, privateDataAccessed, toolCalls[], dataObjects[]}` is updated from the **actual results** of tools that read private data. The trifecta rule reads this state. | Scenarios run their legitimate read-only steps through the gate first (`preToolCalls`). |
+| Email recipient check (`server/emailRecipients.ts`) | `[BUILT]` | `to`, `cc`, `bcc` are merged and parsed with the `email-addresses` package; domains are lowercased, converted to punycode and compared **exactly** to the allow-list; every address must pass. A raw-text scan rejects display-name tricks. | Parsing is only as good as the parser plus these checks; internationalised local parts are rejected. |
+| Credential broker (`server/credentialBroker.ts`) | `[BUILT]` | Ed25519 signed tokens with `kid`, key rotation (previous key accepted for at most one TTL), claims `jti, sub, sessionId, tool, argsHash, approvalId, iat, nbf, exp<=60s, aud`. The tool server verifies with the public key only and rejects bad signature, expiry, audience, tool, session, argument-hash mismatch, replay and revoked tokens. The kill switch revokes all outstanding tokens of the agent. | The jti replay store is in memory and local to one tool-server process. |
+| Tool argument schemas (`server/toolSchemas.ts`) | `[BUILT]` | One strict zod schema per tool; unknown/extra arguments rejected before the gate and again at the tool server. | Only the five demo tools exist. |
+| Legacy standing key (`server/legacyStandingKeyDemo.ts`) | `[SIMULATED]` | Labelled **"Simulation of the legacy pattern"**. A random-per-boot key used only by the firewall = OFF scenario. The real `executeTool` has no master-key path and no "firewall off" flag. | It exists to show the old pattern, not as a real credential path. |
+| Audit log (`server/auditLog.ts`) | `[BUILT]` | `hash = HMAC-SHA256(auditKey, prevHash + canonical entry)`, persisted to append-only JSONL (`AUDIT_DIR`), reloaded and verified on boot. Signed anchors every 10 entries or on demand in a separate file (`GET /api/audit/anchors`); `verifyChain` compares against the latest anchor to detect tail truncation. | Hash-chained and keyed; detects edits, deletions and reordering; an attacker with both the key and the files can still forge; external anchoring is the production fix. The anchors are a **local witness simulation; production would use an external transparency log or RFC 3161 timestamping.** |
+| Detectors | `[BUILT]` | Verhoeff, Luhn, PAN/phone regex, canary token, markdown-image exfil, English + Hinglish injection heuristics. | Heuristics; they have false negatives and false positives (shown in the red-team report). |
+| Red-team runner (`server/redteam.ts`) | `[BUILT]` | Runs a hand-written seed set against an **isolated** broker and tool server and counts harm only if the action really executed. The conclusion text is computed from the metrics. | Small seed set written by the same team as the detectors and policy. |
+| Gemini agent (`server/gemini.ts`) | `[PROTOTYPE]` | `GEMINI_MODEL` is configurable and probed with a tiny call at boot. If unavailable, a banner is shown and runs fall back to the simulated agent **and are labelled as simulated**. | Tool calls are parsed with regexes from free text. Real models may not follow injections. |
+| Traffic baseline, SimHash clustering, MCP vetting, incident drafts | `[PRECOMPUTED]` / `[PROTOTYPE]` | As before: precomputed coefficients, SimHash, pinned tool-spec hashes, CERT-In/DPDP draft templates. | Seeded data. Drafts are not legal advice and are not submitted anywhere. |
 
 ---
 
-## 3. Standing Master Key vs. Scoped Broker Token
+## 2. Threat model
 
-- **Firewall OFF (Legacy Vulnerable Pattern)**:
-  The agent holds a standing master key (`MASTER_KEY_SECRET`). It has no argument restrictions, infinite lifetime, no nonce validation, and can be replayed endlessly by any prompt injection that compromises the model.
-- **Firewall ON (LLM Firewall Pattern)**:
-  The agent holds **zero standing tool credentials**. Tool calls pass through the Action Gate. If approved, the Credential Broker issues a single-use, 60-second HMAC-SHA256 micro-token cryptographically binding only security-relevant constraints (`tool`, `recipient`, `amount`, `upiId`). The tool server verifies the token using `crypto.timingSafeEqual` and strictly rejects replays or argument tampering.
+**Assets**: private records behind tools (candidate files, orders), money movement (refunds), outbound email, the signing key, the audit log.
 
----
+**Attacker**: someone who can place text in anything the agent reads (resume, ticket, tool output, web page) and therefore can steer the model; or who can steal and replay a token; or who can call the HTTP API.
 
-## 4. Quickstart & Running the Application
+**Assumptions**: the Armora server, the broker private key and the tool server run in a trusted environment; the operator keeps `ADMIN_TOKEN`, `BROKER_ED25519_SEED` and `AUDIT_HMAC_KEY` secret; humans in the approval queue read what they approve.
 
-### Local Development
-```bash
-# Install dependencies
-npm install
-
-# Start full-stack development server (Express backend + Vite frontend on port 3000)
-npm run dev
-```
-
-Visit `http://localhost:3000` to interact with:
-1. **Start 3-Minute Demo**: Guided 6-step walkthrough demonstrating attack exfiltration, gate enforcement, audit walk, adaptive attacker bypass, and agent quarantine.
-2. **Split-Screen View**: Side-by-side comparison of "Without Firewall | With Firewall" for identical attack vectors.
-3. **Red-Team Suite**: 24 synthetic attack test cases + Adaptive Mutation Engine demonstrating that heuristic detectors can be bypassed while the Action Gate holds.
-4. **Self-Test Suite (`/selftest`)**: 29 automated test vectors verifying Verhoeff checksums, Luhn, Token replay rejection, 10 policy vectors, canary tokens, and MCP tool vetting.
-5. **Pitch & Architecture**: Overview of the 5-step pipeline with printable/scannable QR codes.
-
-### Production Build & Test
-```bash
-# Build Vite client SPA
-npm run build
-
-# Run TypeScript linter
-npm run lint
-
-# Start production server
-npm start
-```
-
----
-
-## 5. Deployment to Google Cloud Run
-
-The application is container-ready and runs on any standard Node.js 22 runtime:
-
-```bash
-# 1. Build and deploy directly to Cloud Run
-gcloud run deploy llm-firewall \
-  --source . \
-  --platform managed \
-  --region asia-east1 \
-  --allow-unauthenticated \
-  --port 3000 \
-  --set-env-vars "NODE_ENV=production,GEMINI_MODEL=gemini-3.8-flash"
-```
-
----
-
-## 6. Environment Variables
-
-| Variable | Default Value | Description |
+| Threat | Mitigation in this repo | Residual risk |
 | :--- | :--- | :--- |
-| `PORT` | `3000` | Port for the Express server and Vite development middleware. |
-| `GEMINI_API_KEY` | Injected by AI Studio | Server-side API key for Gemini model inference. |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini model alias used when LLM mode is set to Gemini. |
-| `BROKER_HMAC_SECRET` | Auto-generated secure secret | Secret key used by the Credential Broker to sign single-use 60s tokens. |
-| `MASTER_KEY_SECRET` | Auto-generated standing key | Standing master key used only when Firewall is toggled OFF (demonstration mode). |
-| `AUDIT_SALT_SECRET` | Auto-generated audit salt | Server-side secret used to HMAC-hash PII before writing to audit entries. |
+| Injected text makes the model request a harmful tool call | Policy engine on the *call* (untrusted context + external tool, private data read, risk score, recipients, UPI handles, amount), independent of detectors | Calls that look legitimate to the policy (e.g. email to an allow-listed domain from a trusted session) are allowed. |
+| Recipient tricks (lists, cc/bcc, display names, lookalike or IDN domains) | Real address parser, all recipients checked, exact punycode domain match | Parser edge cases; allow-listed domains are fully trusted. |
+| Argument swap / token reuse | Token bound to tool, session and SHA-256 of the exact validated args; single use; 60 s; revocation | Replay store is per process. |
+| Tool server minting its own tokens | It only holds the public key | Compromise of the broker process compromises everything. |
+| Log tampering | Keyed hash chain, JSONL on disk, verification at boot, signed anchors | Attacker with key + files can forge; deleting the anchors file defeats local truncation detection. |
+| Unauthorised API use | `ADMIN_TOKEN` required for mutating routes in production, zod validation of bodies, allow-listed PATCH fields, CORS limited to `APP_URL`, CSP in the production build, rate limits, safe error handler | Single shared admin token; no per-user auth or RBAC. |
+| Secret leakage via source | No hard-coded secrets; random per boot unless provided by env | Random keys mean tokens do not survive restart. |
+
+**Out of scope**: model jailbreaks in general, malicious insiders with shell access, denial of service, multi-tenant isolation, real PII handling (all data is synthetic).
 
 ---
 
-## 7. Known Limitations & Roadmap
+## 3. Limitations (read this before relying on anything)
 
-1. **In-Memory Store**: This hackathon prototype stores incidents, outbox messages, and audit hash chains in memory. Production implementations would back these with PostgreSQL / Cloud SQL and cold object storage.
-2. **Hash Chain Tail Truncation**: While inner block tampering is mathematically detected by the SHA-256 chain walk, deleting trailing blocks (tail truncation) requires an external witness anchor (e.g. RFC 3161 timestamping authority or public ledger), marked as `[ROADMAP]`.
-3. **Probabilistic Nature of LLMs**: Heuristic prompt filters can never guarantee 100% detection against adaptive adversarial mutations; security guarantees are therefore established at the **Action Gate & Credential Broker** tool boundary.
+1. **Prototype, in-memory state.** Incidents, approvals, the outbox and the jti store are in memory. Only the audit log is persisted.
+2. **Local audit key.** If `AUDIT_HMAC_KEY` is not set, the key is stored next to the logs in `AUDIT_DIR`, so a disk-level attacker can forge. Local anchors do not fix that; external anchoring (transparency log, RFC 3161) would.
+3. **Detectors are heuristics** and are bypassable (the adaptive-attacker panel demonstrates it with a few mutations). Guarantees come from the gate and token layers, only for calls routed through them.
+4. **Seed-set metrics.** Red-team numbers are measured on a small hand-written set ("on our seed set, n=..."). Some seed attacks to allow-listed domains from trusted sessions can execute by policy design; the report shows them instead of hiding them. Attacks held for approval are reported separately and are never counted as blocked.
+5. **Simulated agent.** The default agent deterministically follows the injection. It demonstrates the gate; it says nothing about how any real model behaves.
+6. **Gemini.** Availability is probed once at boot. Output from the simulated fallback is always labelled as simulated.
+7. **Single admin token**, no user accounts, no RBAC. The settings page tenants/roles are illustrative.
+8. **Replay store** is per tool-server process; a horizontally scaled tool server needs a shared store.
+9. **Offline caveat for this change set**: dependencies could not be installed in the authoring sandbox, so `package-lock.json` has to be generated with `npm install` and committed (see below).
+
+---
+
+## 4. Quickstart
+
+```bash
+npm ci            # needs a committed package-lock.json
+npm run lint      # tsc --noEmit
+npm test          # vitest --run
+npm run dev       # Express + Vite on http://localhost:3000
+```
+
+Node >= 22 is required. The same regression cases run in `npm test` and in the app at `GET /api/selftest` (the Self-Test page); cases that touch live singletons run only under vitest, and the report says how many.
+
+Production:
+
+```bash
+npm run build
+NODE_ENV=production ADMIN_TOKEN=... BROKER_ED25519_SEED=... AUDIT_HMAC_KEY=... APP_URL=https://your.host npm start
+```
+
+In production, mutating routes (approvals, policy, reset, app settings, kill switch, blocklist, MCP, traffic false-positive marking, anchor creation) need the `x-admin-token` header (or `Authorization: Bearer`). The UI has a field for it in the status banner. With no `ADMIN_TOKEN` configured those routes answer 503.
+
+CI (`.github/workflows/ci.yml`) runs `npm ci`, `tsc --noEmit` and `vitest --run`.
+
+---
+
+## 5. Environment variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PORT` | `3000` | HTTP port. |
+| `NODE_ENV` | unset | `production` enables the admin-token requirement, CSP and static serving. |
+| `DEMO_MODE` | `true` locally, `false` in production | Enables `/api/audit/tamper` and the `overrideToolCall` parameter. |
+| `ADMIN_TOKEN` | unset | Required header value for mutating routes in production. |
+| `APP_URL` | unset | The only origin allowed by CORS. Unset means same-origin only. |
+| `GEMINI_API_KEY` | unset | Server-side Gemini key. |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Model name; probed at boot, never assumed to exist. |
+| `BROKER_ED25519_SEED` | random per boot (warning) | Base64 of 32 bytes; signing key seed for the credential broker. |
+| `AUDIT_HMAC_KEY` | key file in `AUDIT_DIR` (warning) | Hex or string (>= 16 chars) used for the audit HMAC. |
+| `AUDIT_DIR` | `./.audit` | Directory for `entries.jsonl`, `anchors.jsonl` and, if needed, `audit.key`. |
+| `AUDIT_SALT_SECRET` | random per boot (warning) | Salt for HMAC-hashing PII evidence in findings. |
+
+---
+
+## 6. Honesty labels used in the UI
+
+- **Simulation of the legacy pattern**: the firewall = OFF path (standing key). Never a real credential path.
+- **Simulated fooled agent**: the default "mock" agent; not a model.
+- **Local witness simulation**: the audit anchors.
+- `[BUILT]`, `[PROTOTYPE]`, `[SEEDED]`, `[PRECOMPUTED]`, `[ROADMAP]` chips as shown in the Real vs Simulated page.

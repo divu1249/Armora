@@ -143,7 +143,7 @@ export const QuickScenarioRunnerModal: React.FC<QuickScenarioRunnerModalProps> =
                     : 'bg-[#090d18] border-[#00e5ff]/15 text-[#8293aa] hover:text-white'
                 }`}
               >
-                Gemini 3.8 Flash <span className="text-3xs font-mono text-[#ffb020] block mt-0.5">[PROTOTYPE]</span>
+                Gemini (configured model) <span className="text-3xs font-mono text-[#ffb020] block mt-0.5">[PROTOTYPE]</span>
               </button>
             </div>
           </div>

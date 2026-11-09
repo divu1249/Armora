@@ -39,7 +39,7 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
     if (!activeScenario) return;
     setRunning(true);
     try {
-      // Run with firewall OFF (standing master key)
+      // Run with firewall OFF (simulation of the legacy pattern)
       const resOff = await runAgentScenario({
         scenarioId: activeScenario.id,
         firewallMode: 'off',
@@ -167,7 +167,7 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
                 <h3 className="text-sm font-bold font-heading text-[#ff365d] uppercase tracking-wide">
                   Without Firewall (OFF)
                 </h3>
-                <p className="text-3xs font-mono text-[#8293aa]">Standing Master Key Bypass Mode</p>
+                <p className="text-3xs font-mono text-[#8293aa]">Simulation of the legacy pattern (standing key)</p>
               </div>
             </div>
             <span className="text-3xs font-mono text-[#ff365d] bg-[#ff365d]/10 border border-[#ff365d]/40 px-2 py-0.5 rounded font-black tracking-wider">
@@ -210,13 +210,13 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
                 <Unlock className="w-4 h-4 text-[#ff365d]" />
                 Step 3: Security Boundary
               </span>
-              <span>NO GATE / MASTER KEY</span>
+              <span>NO GATE / LEGACY SIMULATION</span>
             </div>
             <p className="text-xs text-[#ff365d] leading-relaxed">
-              No Action Gate. Standing master credential is unconditionally passed to the protected tool server.
+              No Action Gate. A standing key is passed through the isolated legacy-pattern simulation (the real tool server rejects it).
             </p>
             <div className="font-mono text-3xs text-[#ff365d]/80 bg-black/60 p-2 rounded border border-[#ff365d]/30">
-              Credential: MASTER_KEY_LIVE_PREMISES_BYPASS (Perpetual standing secret)
+              Credential: standing key, random per boot (Simulation of the legacy pattern)
             </div>
           </div>
 
@@ -229,7 +229,7 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
             <p className="text-xs text-slate-300 font-sans">
               {withoutIncident
                 ? withoutIncident.withoutFirewallOutcome?.impact || 'Tool executed directly. Confidential data exfiltrated to external recipient.'
-                : activeScenario.withoutFirewallOutcome?.impact || 'Tool executed directly with standing master key.'}
+                : activeScenario.withoutFirewallOutcome?.impact || 'Tool executed directly with a standing key (Simulation of the legacy pattern).'}
             </p>
             <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-[#ff365d]/30">
               <span className="text-[#8293aa]">Data Left Premises:</span>
@@ -309,7 +309,7 @@ export const SplitScreenPage: React.FC<SplitScreenPageProps> = ({ scenarios, onS
               <span>RESULT: ATTACK NEUTRALIZED</span>
             </div>
             <p className="text-xs text-slate-300 font-sans">
-              Tool call intercepted at boundary. Zero bytes exfiltrated. Immutable audit entry appended to SHA-256 hash chain.
+              Tool call intercepted at boundary. Zero bytes exfiltrated. Audit entry appended to keyed audit hash chain.
             </p>
             <div className="flex items-center justify-between text-2xs font-mono pt-1 border-t border-[#00f5a0]/30">
               <span className="text-[#8293aa]">Data Left Premises:</span>

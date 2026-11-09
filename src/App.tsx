@@ -54,6 +54,7 @@ import { DemoTourModal } from './components/DemoTourModal.tsx';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { Tooltip } from './components/Tooltip.tsx';
+import { StatusBanner } from './components/StatusBanner.tsx';
 import {
   fetchScenarios,
   fetchIncidents,
@@ -752,6 +753,7 @@ export default function App() {
 
         {/* Viewport Content */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#080b12] relative">
+          <StatusBanner />
           <div className="max-w-7xl mx-auto space-y-6">
             {currentPage === 'overview' && (
               <OverviewPage

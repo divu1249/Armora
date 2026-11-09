@@ -143,7 +143,7 @@ export const IncidentDetailPage: React.FC<IncidentDetailPageProps> = ({
         {
           step: 4,
           name: 'Action Gate Decision & Credential Minting',
-          description: 'Deterministic credential minting boundary. Short-lived 60s scoped HMAC token vs standing master key.',
+          description: 'Deterministic credential minting boundary. Short-lived 60s Ed25519-signed token bound to the exact call vs a standing key (legacy-pattern simulation).',
           verdict: incident.decision.action,
           justification: incident.decision.reason,
           scopedTokenIssued: incident.decision.action === 'allow',
@@ -161,7 +161,7 @@ export const IncidentDetailPage: React.FC<IncidentDetailPageProps> = ({
         {
           step: 6,
           name: 'Counterfactual Analysis (Without Firewall)',
-          description: 'Historical/counterfactual comparison if firewall was OFF and standing master key was used.',
+          description: 'Historical/counterfactual comparison if firewall was OFF (simulation of the legacy pattern, standing key).',
           withoutFirewallOutcome: incident.withoutFirewallOutcome || null,
         },
       ],
@@ -177,7 +177,7 @@ export const IncidentDetailPage: React.FC<IncidentDetailPageProps> = ({
         'Deterministic boundary for tool calls routed through the gate and verified by the tool server.',
         'Never claim 100% protection against adaptive adversarial attacks.',
         'Synthetic data only (fake Aadhaar/PAN, example.com addresses).',
-        'Raw PII is never stored in finding records or logged in hash chain entries.',
+        'Raw PII is never stored in finding records or logged in audit entries.',
       ],
     };
 
@@ -580,12 +580,12 @@ export const IncidentDetailPage: React.FC<IncidentDetailPageProps> = ({
                 </div>
 
                 <div className="text-2xs text-[#8293aa] leading-relaxed font-sans">
-                  In legacy agent setups, the agent holds a standing master key. An adversary hijacking the prompt can call tools without restrictions, argument constraints, or approval gates.
+                  In legacy agent setups, the agent holds a standing key (Simulation of the legacy pattern). An adversary hijacking the prompt can call tools without restrictions, argument constraints, or approval gates.
                 </div>
               </div>
             ) : (
               <p className="text-xs text-[#8293aa] font-mono">
-                In off-mode, the agent executes all tool calls using the standing master key without argument constraints.
+                In off-mode, the agent executes all tool calls using a standing key without argument constraints (Simulation of the legacy pattern).
               </p>
             )}
           </div>

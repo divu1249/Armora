@@ -131,7 +131,7 @@ export const ScenarioRunner: React.FC<ScenarioRunnerProps> = ({
             <div className="text-2xs text-slate-500">
               {firewallMode === 'enforce' && 'Enforce: Deterministic gate blocks unauthorized actions and mints 60s tokens.'}
               {firewallMode === 'shadow' && 'Shadow: Permissive execution while logging would-block violations.'}
-              {firewallMode === 'off' && 'Off: Uses Standing Master Key without argument checks or expiry.'}
+              {firewallMode === 'off' && 'Off: Simulation of the legacy pattern (a standing key with no argument checks or expiry); the real tool server never accepts it.'}
             </div>
           </div>
 
@@ -161,7 +161,7 @@ export const ScenarioRunner: React.FC<ScenarioRunnerProps> = ({
                     : 'bg-slate-50 border-slate-300 text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Gemini 3.8 Flash <span className="text-2xs font-mono font-normal">[PROTOTYPE]</span>
+                Gemini (configured model) <span className="text-2xs font-mono font-normal">[PROTOTYPE]</span>
               </button>
             </div>
 

@@ -21,14 +21,14 @@ export const CredentialContrast: React.FC<CredentialContrastProps> = ({ firewall
             </span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Legacy agents hold standing master credentials; the LLM Firewall issues micro-scoped 60-second tokens bound to exact arguments.
+            Legacy agents hold standing credentials (shown here as a simulation of the legacy pattern); Armora issues Ed25519-signed 60-second tokens bound to the exact call.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span className="text-slate-500">Active State:</span>
           {isOff ? (
             <span className="font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-md">
-              Firewall OFF (Master Key Active)
+              Firewall OFF (Simulation of the legacy pattern)
             </span>
           ) : (
             <span className="font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
@@ -39,7 +39,7 @@ export const CredentialContrast: React.FC<CredentialContrastProps> = ({ firewall
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Left: Standing Master Key */}
+        {/* Left: Standing Key (Simulation of the legacy pattern) */}
         <div
           className={`p-4 rounded-lg border transition-all ${
             isOff
@@ -58,13 +58,13 @@ export const CredentialContrast: React.FC<CredentialContrastProps> = ({ firewall
           </div>
 
           <p className="text-xs text-slate-700 mb-3">
-            Agent process holds a standing database/API master secret in memory. Any prompt injection that hijacks the model can invoke any tool indefinitely.
+            Agent process holds a standing secret in memory (this panel is a simulation of the legacy pattern, not a real credential path). Any prompt injection that hijacks the model can invoke any tool indefinitely.
           </p>
 
           <div className="space-y-1.5 font-mono text-2xs">
             <div className="flex justify-between py-1 border-b border-rose-200/60">
               <span className="text-slate-500">Credential Type:</span>
-              <span className="text-rose-900 font-semibold">Standing Static Master Secret</span>
+              <span className="text-rose-900 font-semibold">Standing static secret (simulated)</span>
             </div>
             <div className="flex justify-between py-1 border-b border-rose-200/60">
               <span className="text-slate-500">TTL / Expiry:</span>
@@ -110,7 +110,7 @@ export const CredentialContrast: React.FC<CredentialContrastProps> = ({ firewall
           <div className="space-y-1.5 font-mono text-2xs">
             <div className="flex justify-between py-1 border-b border-emerald-200/60">
               <span className="text-slate-500">Credential Type:</span>
-              <span className="text-emerald-900 font-semibold">HMAC-SHA256 Scoped JTI Token</span>
+              <span className="text-emerald-900 font-semibold">Ed25519-signed Scoped JTI Token</span>
             </div>
             <div className="flex justify-between py-1 border-b border-emerald-200/60">
               <span className="text-slate-500">TTL / Expiry:</span>
@@ -118,7 +118,7 @@ export const CredentialContrast: React.FC<CredentialContrastProps> = ({ firewall
             </div>
             <div className="flex justify-between py-1 border-b border-emerald-200/60">
               <span className="text-slate-500">Argument Binding:</span>
-              <span className="text-emerald-900 font-semibold">Cryptographically bound (timingSafeEqual)</span>
+              <span className="text-emerald-900 font-semibold">SHA-256 of canonical args, constant-time compare</span>
             </div>
             <div className="flex justify-between py-1 border-b border-emerald-200/60">
               <span className="text-slate-500">Replay Protection:</span>
