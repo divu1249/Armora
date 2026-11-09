@@ -43,6 +43,76 @@ export interface VerificationReport {
   tailTruncationNote: string;
 }
 
+export interface EntryProof {
+  entry: AuditEntry;
+  entryHashValid: boolean;
+  linkValid: boolean;
+  path: Array<{ seq: number; prevHash: string; hash: string }>;
+  pathValid: boolean;
+  anchor: AuditAnchor | null;
+  anchorSigValid: boolean;
+  anchorMatches: boolean;
+  /** entry hash, link, path and anchor all verified */
+  covered: boolean;
+  note: string;
+}
+
+export interface AuditQuery {
+  search?: string;
+  sessionId?: string;
+  ruleId?: string;
+  tool?: string;
+  decision?: string;
+  type?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** Newest first. Filters: session, rule, tool, decision (data.action/decision), type, date range, free text. */
+export function filterAuditEntries(chain: AuditEntry[], q: AuditQuery): AuditEntry[] {
+  const search = q.search?.toLowerCase();
+  const from = q.from ? Date.parse(q.from) : undefined;
+  const to = q.to ? Date.parse(q.to) : undefined;
+  const out = chain.filter((e) => {
+    const d = e.data as Record<string, unknown>;
+    if (q.sessionId && e.sessionId !== q.sessionId) return false;
+    if (q.type && e.type !== q.type) return false;
+    if (q.ruleId && d.ruleId !== q.ruleId) return false;
+    if (q.tool && d.tool !== q.tool) return false;
+    if (q.decision) {
+      const dec = String(d.action ?? d.decision ?? '').toLowerCase();
+      if (dec !== q.decision.toLowerCase()) return false;
+    }
+    const t = Date.parse(e.ts);
+    if (from !== undefined && !Number.isNaN(from) && t < from) return false;
+    if (to !== undefined && !Number.isNaN(to) && t > to) return false;
+    if (search && !JSON.stringify([e.type, e.sessionId, e.data]).toLowerCase().includes(search)) return false;
+    return true;
+  });
+  return out.reverse();
+}
+
+const csvCell = (v: unknown): string => {
+  let s = v === undefined || v === null ? '' : typeof v === 'string' ? v : JSON.stringify(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // spreadsheet formula-injection guard
+  return `"${s.replace(/"/g, '""')}"`;
+};
+
+export function auditToJsonl(items: AuditEntry[]): string {
+  return items.map((e) => JSON.stringify(e)).join('\n') + (items.length ? '\n' : '');
+}
+
+export function auditToCsv(items: AuditEntry[]): string {
+  const head = ['seq', 'ts', 'type', 'sessionId', 'ruleId', 'tool', 'decision', 'hash', 'prevHash', 'data'];
+  const rows = items.map((e) => {
+    const d = e.data as Record<string, unknown>;
+    return [e.seq, e.ts, e.type, e.sessionId, d.ruleId, d.tool, d.action ?? d.decision, e.hash, e.prevHash, e.data].map(csvCell).join(',');
+  });
+  return [head.join(','), ...rows].join('\n') + '\n';
+}
+
 export interface AuditOptions {
   /** directory for entries.jsonl / anchors.jsonl; omit for a purely in-memory chain */
   dir?: string | null;
@@ -69,6 +139,7 @@ export class AuditHashChain {
   constructor(opts: AuditOptions = {}) {
     this.dir = opts.dir ?? null;
     this.anchorEvery = opts.anchorEvery ?? 10;
+    if (this.dir) fs.mkdirSync(this.dir, { recursive: true }); // must exist before a key file is written
     this.key = this.resolveKey(opts);
     this.anchorKey = crypto.createHmac('sha256', this.key).update('armora-audit-anchor-v1').digest();
     if (this.dir) fs.mkdirSync(this.dir, { recursive: true });
@@ -259,6 +330,66 @@ export class AuditHashChain {
       }
     }
     return mk({ anchor: { anchorsChecked: checked, latestAnchorSeq: latest?.seq ?? null, truncationDetected: false } });
+  }
+
+  public getEntry(seq: number): AuditEntry | undefined {
+    return this.chain[seq];
+  }
+
+  /**
+   * Proof for one entry: recomputes its keyed hash, checks the link to the previous entry, returns the
+   * hash path up to the first anchor at or after it and whether that anchor matches the chain.
+   */
+  public proveEntry(seq: number): EntryProof | null {
+    const entry = this.chain[seq];
+    if (!entry) return null;
+    const { hash: _h, ...rest } = entry;
+    const entryHashValid = this.equalHex(this.computeHash(rest), entry.hash);
+    const prev = seq === 0 ? GENESIS_HASH : this.chain[seq - 1]?.hash;
+    const linkValid = this.equalHex(entry.prevHash, prev);
+    const anchor = this.anchors.find((a) => a.seq >= seq) ?? null;
+    const path: EntryProof['path'] = [];
+    let pathValid = true;
+    if (anchor) {
+      const end = Math.min(anchor.seq, seq + 499);
+      for (let i = seq; i <= end; i++) {
+        const e = this.chain[i];
+        if (!e) { pathValid = false; break; }
+        const { hash: _x, ...r } = e;
+        const before = i === 0 ? GENESIS_HASH : this.chain[i - 1]?.hash;
+        if (!this.equalHex(this.computeHash(r), e.hash) || !this.equalHex(e.prevHash, before)) pathValid = false;
+        path.push({ seq: e.seq, prevHash: e.prevHash, hash: e.hash });
+      }
+      if (end < anchor.seq) pathValid = false; // path truncated at the cap: not fully shown
+    }
+    let anchorSigValid = false;
+    let anchorMatches = false;
+    if (anchor) {
+      const { sig, ...base } = anchor;
+      anchorSigValid = this.equalHex(this.signAnchor(base), sig);
+      anchorMatches = this.equalHex(this.chain[anchor.seq]?.hash, anchor.headHash);
+    }
+    return {
+      entry,
+      entryHashValid,
+      linkValid,
+      path,
+      pathValid: anchor ? pathValid : false,
+      anchor,
+      anchorSigValid,
+      anchorMatches,
+      covered: Boolean(anchor && anchorSigValid && anchorMatches && pathValid),
+      note: anchor
+        ? AUDIT_ANCHOR_NOTE
+        : 'No anchor covers this entry yet (anchors are written every N entries or on demand). The keyed hash and link are still checked. ' + AUDIT_ANCHOR_NOTE,
+    };
+  }
+
+  public query(q: AuditQuery = {}): { items: AuditEntry[]; total: number; page: number; pageSize: number } {
+    const items = filterAuditEntries(this.chain, q);
+    const pageSize = Math.min(Math.max(q.pageSize ?? 25, 1), 500);
+    const page = Math.max(q.page ?? 1, 1);
+    return { items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, pageSize };
   }
 
   /** DEMO ONLY (route gated by DEMO_MODE): modifies a historical entry in memory. */

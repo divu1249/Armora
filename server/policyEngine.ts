@@ -15,11 +15,12 @@ import {
 import { TOOL_TAXONOMY, UNKNOWN_TOOL_TAXONOMY } from './taxonomy.ts';
 import { checkRecipientsAllowed, normalizeDomain } from './emailRecipients.ts';
 import { isUntrusted } from './sessionState.ts';
+import type { ArgProvenance } from './provenance.ts';
 
 export { TOOL_TAXONOMY };
 
 export const DEFAULT_POLICY_YAML = `
-version: "1.0.0"
+version: "1.1.0"
 name: "Standard Enterprise Agent Security Policy"
 rules:
   - id: "R1"
@@ -61,15 +62,20 @@ rules:
     name: "Risk-Adaptive Action Gate"
     description: "Injection score >= 0.8 elevates session risk to HIGH, strictly blocking all irreversible tool calls."
     enabled: true
+
+  - id: "R7_UNTRUSTED_DERIVED_ARGS"
+    name: "Recipient/Payee Derived From Untrusted Content"
+    description: "Irreversible or external tools whose recipient or payee text also appears in an untrusted segment (exact, normalized or base64) need human approval. A signal, not a guarantee: paraphrasing defeats text matching."
+    enabled: true
 `;
 
 export const SEEDED_POLICY_VERSIONS: PolicyVersion[] = [
   {
-    id: 'pol_v1_0_0',
-    version: '1.0.0 (Active)',
-    timestamp: '2026-11-08T00:00:00Z',
+    id: 'pol_v1_1_0',
+    version: '1.1.0 (Active)',
+    timestamp: '2026-11-09T00:00:00Z',
     author: 'sec-ops@enterprise.internal',
-    changes: 'Added Trifecta Guard (R2), outbound PII redaction (R5), and adaptive risk gate (R6).',
+    changes: 'Added R7: recipient/payee derived from untrusted content requires approval (argument provenance). Builds on Trifecta Guard (R2), PII redaction (R5) and adaptive risk gate (R6).',
     yaml: DEFAULT_POLICY_YAML,
   },
   {
@@ -164,6 +170,7 @@ const RuleSchema = z.discriminatedUnion('id', [
     .strict(),
   z.object({ id: z.literal('R5_PII_REDACTION'), ...ruleBase }).strict(),
   z.object({ id: z.literal('R6_RISK_ADAPTIVE_GATE'), ...ruleBase }).strict(),
+  z.object({ id: z.literal('R7_UNTRUSTED_DERIVED_ARGS'), ...ruleBase }).strict(),
 ]);
 
 export const PolicySchema = z
@@ -190,6 +197,7 @@ export const KNOWN_RULE_IDS: PolicyRuleId[] = [
   'R4_FINANCIAL_GUARD',
   'R5_PII_REDACTION',
   'R6_RISK_ADAPTIVE_GATE',
+  'R7_UNTRUSTED_DERIVED_ARGS',
 ];
 
 const MAX_POLICY_BYTES = 100_000;
@@ -224,6 +232,7 @@ const PRIORITY = [
   'R2_TRIFECTA',
   'R3_DOMAIN_ALLOWLIST',
   'R4_FINANCIAL_GUARD',
+  'R7_UNTRUSTED_DERIVED_ARGS',
   'R1_EXTERNAL_UNTRUSTED',
 ];
 
@@ -246,6 +255,8 @@ export interface EvaluateParams {
   injectionScore: number;
   firewallMode: FirewallMode;
   sessionState?: SessionState;
+  /** result of findArgProvenance for this call (optional; R7 needs it) */
+  argProvenance?: ArgProvenance;
 }
 
 export class PolicyEngine {
@@ -309,7 +320,7 @@ export class PolicyEngine {
   }
 
   private evaluateUnsafe(params: EvaluateParams): GateDecision {
-    const { toolCall, segments, findings, injectionScore, firewallMode, sessionState } = params;
+    const { toolCall, segments, findings, injectionScore, firewallMode, sessionState, argProvenance } = params;
     if (!toolCall || typeof toolCall.tool !== 'string' || !toolCall.args || typeof toolCall.args !== 'object') {
       throw new Error('malformed tool call');
     }
@@ -393,6 +404,20 @@ export class PolicyEngine {
       if (action !== 'allow') {
         matches.push({ ruleId: 'R4_FINANCIAL_GUARD', action, reason: problems.join(' ') });
       }
+    }
+
+    // R7: recipient/payee text also present in untrusted content (provenance signal)
+    if (
+      this.rule('R7_UNTRUSTED_DERIVED_ARGS') &&
+      (taxonomy.irreversible || taxonomy.sendsExternal) &&
+      argProvenance?.recipientOrPayeeDerivedFromUntrusted === true
+    ) {
+      const m = argProvenance.matches.find((x) => x.untrusted && (x.kind === 'recipient' || x.kind === 'payee'))!;
+      matches.push({
+        ruleId: 'R7_UNTRUSTED_DERIVED_ARGS',
+        action: 'approve',
+        reason: `${m.kind} "${m.value}" (arg ${m.arg}) also appears in untrusted segment ${m.segmentId} at [${m.start}-${m.end}] (${m.method} match). Human approval required. Provenance matching is a signal, not a guarantee.`,
+      });
     }
 
     // R1: untrusted content + external tool

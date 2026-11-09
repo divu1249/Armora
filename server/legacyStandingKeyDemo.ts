@@ -24,8 +24,8 @@ export class LegacyStandingKeyDemo {
     return typeof candidate === 'string' && safeEqual(candidate, this.key);
   }
 
-  public execute(toolCall: ToolCall, toolServer: ProtectedToolServer): ToolResult {
-    return toolServer.executeLegacySimulation(toolCall, this.presentKey(), (c) => this.verifyKey(c));
+  public execute(toolCall: ToolCall, toolServer: ProtectedToolServer, sessionId?: string): ToolResult {
+    return toolServer.executeLegacySimulation(toolCall, this.presentKey(), (c) => this.verifyKey(c), sessionId);
   }
 }
 

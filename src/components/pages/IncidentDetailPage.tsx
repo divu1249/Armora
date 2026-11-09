@@ -1,3 +1,4 @@
+import { MatchedRulesView, OutputInspectionView, ProvenanceHighlight, ProvenanceNote, StepsView } from '../IncidentExtras.tsx';
 import React, { useState } from 'react';
 import {
   ShieldAlert,
@@ -386,9 +387,14 @@ export const IncidentDetailPage: React.FC<IncidentDetailPageProps> = ({
                       <pre className="text-2xs font-mono text-slate-200 whitespace-pre-wrap max-h-36 overflow-y-auto bg-[#050810] p-2.5 rounded border border-[#00e5ff]/10 scanlines-overlay">
                         {renderHighlightedContent(seg.content, seg.id)}
                       </pre>
+                      {incident.argProvenance && <ProvenanceHighlight segment={seg} matches={incident.argProvenance.matches} />}
                     </div>
                   ))}
                 </div>
+                <ProvenanceNote provenance={incident.argProvenance} />
+                <StepsView steps={incident.steps} />
+                <OutputInspectionView items={incident.outputInspections} />
+                {incident.honestyNote && <div className="mt-2 p-2 bg-[#ffb020]/10 border border-[#ffb020]/30 rounded text-3xs text-[#ffd27a] font-mono">{incident.honestyNote}</div>}
               </div>
             </div>
 
@@ -447,6 +453,7 @@ export const IncidentDetailPage: React.FC<IncidentDetailPageProps> = ({
                     <span>Shadow Mode Simulation:</span>
                     <span>{incident.decision.shadowWouldBlock ? 'Would have Blocked' : 'Would Allow'}</span>
                   </div>
+                  <MatchedRulesView decision={incident.decision} />
                 </div>
               </div>
             </div>

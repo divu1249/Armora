@@ -9,6 +9,10 @@ import { redteamCases } from './redteam.ts';
 import { apiCases } from './api.ts';
 import { geminiCases } from './gemini.ts';
 import { readmeCases } from './readme.ts';
+import { gatewayCases } from './gateway.ts';
+import { preventionCases } from './prevention.ts';
+import { blastCases } from './blast.ts';
+import { credentialCases } from './credentials.ts';
 
 /** One source of truth: vitest iterates these AND /selftest includes the non-live ones. */
 export const ALL_REGRESSION_CASES: RegressionCase[] = [
@@ -22,5 +26,9 @@ export const ALL_REGRESSION_CASES: RegressionCase[] = [
   ...apiCases,
   ...geminiCases,
   ...readmeCases,
+  ...gatewayCases,
+  ...preventionCases,
+  ...blastCases,
+  ...credentialCases,
 ];
 export type { RegressionCase } from './helpers.ts';

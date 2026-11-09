@@ -99,3 +99,52 @@ export const ReportHtmlBody = z
 
 // Referenced so the import is not elided: every tool schema is a strict zod object.
 export const TOOL_NAMES = Object.keys(TOOL_ARG_SCHEMAS);
+
+export const TtlBody = z.object({ ttlSeconds: z.number().int().min(1).max(120) }).strict();
+
+const qStr = (max = 200) => z.string().max(max).optional();
+const qInt = (max: number) => z.coerce.number().int().min(1).max(max).optional();
+
+export const AuditQueryParams = z
+  .object({
+    search: qStr(),
+    sessionId: qStr(100),
+    ruleId: qStr(100),
+    tool: qStr(100),
+    decision: z.enum(['allow', 'deny', 'approve', 'executed', 'blocked', 'pending', 'issued', 'redeemed', 'rejected', 'revoked', 'expired']).optional(),
+    type: qStr(50),
+    from: qStr(40),
+    to: qStr(40),
+    page: qInt(100000),
+    pageSize: qInt(500),
+    format: z.enum(['json', 'jsonl', 'csv']).optional(),
+  })
+  .strict();
+
+export const LedgerQueryParams = z
+  .object({
+    search: qStr(),
+    sessionId: qStr(100),
+    type: qStr(50),
+    tool: qStr(100),
+    ruleId: qStr(100),
+    action: qStr(50),
+    agentId: qStr(100),
+    from: qStr(40),
+    to: qStr(40),
+    page: qInt(100000),
+    pageSize: qInt(500),
+  })
+  .strict();
+
+export const CredentialQueryParams = z
+  .object({
+    search: qStr(),
+    status: z.enum(['active', 'redeemed', 'expired', 'revoked', 'rejected']).optional(),
+    agentId: qStr(100),
+    tool: qStr(100),
+    sessionId: qStr(100),
+    page: qInt(100000),
+    pageSize: qInt(200),
+  })
+  .strict();

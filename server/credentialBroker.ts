@@ -13,7 +13,19 @@ import type { ScopedTokenClaims, ToolCall } from './types.ts';
  *    or crypto.randomBytes(32) generated at boot (with a warning).
  */
 
+/** Default token lifetime. Operators may raise it (TOKEN_TTL_SECONDS / setTtl) but never above the hard cap. */
 export const TOKEN_TTL_SECONDS = 60;
+export const MAX_TOKEN_TTL_SECONDS = 120;
+
+/** Receives credential lifecycle events (wired to the event ledger). Never receives token strings. */
+export interface CredentialObserver {
+  onIssued?(claims: ScopedTokenClaims, ttlSeconds: number): void;
+  onRedeemed?(claims: ScopedTokenClaims): void;
+  onRejected?(info: { code: string; error: string; tool: string; sessionId: string; claims?: ScopedTokenClaims }): void;
+  onRevoked?(info: { jti: string; sub: string; sessionId?: string; tool?: string; reason: string }): void;
+  onExpired?(info: { jti: string; sub: string; sessionId: string; tool: string }): void;
+  onKeyRotated?(info: { oldKid: string; newKid: string }): void;
+}
 export const TOKEN_AUDIENCE = 'protected-tool-server';
 
 export interface PublicKeyEntry {
@@ -63,6 +75,8 @@ export function hashArgs(args: Record<string, unknown>): string {
 
 export interface BrokerOptions {
   seed?: Buffer;
+  ttlSeconds?: number;
+  observer?: CredentialObserver;
   now?: () => number;
   /** suppress the "random key generated" warning (tests, isolated red-team stacks) */
   quiet?: boolean;
@@ -72,13 +86,18 @@ export class CredentialBroker {
   private current: { privateKey: crypto.KeyObject; publicKey: crypto.KeyObject; kid: string };
   private previous?: { publicKey: crypto.KeyObject; kid: string; notAfterMs: number };
   /** jti -> { sub, expMs } for tokens that are still live (used by kill switch) */
-  private outstanding = new Map<string, { sub: string; expMs: number }>();
+  private outstanding = new Map<string, { sub: string; sessionId: string; tool: string; expMs: number }>();
+  private ttlSeconds = TOKEN_TTL_SECONDS;
+  public observer?: CredentialObserver;
   /** revoked-jti set, entries expire with the token */
   private revoked = new Map<string, number>();
   private now: () => number;
 
   constructor(opts: BrokerOptions = {}) {
     this.now = opts.now ?? Date.now;
+    this.observer = opts.observer;
+    const envTtl = Number(process.env.TOKEN_TTL_SECONDS);
+    this.ttlSeconds = opts.ttlSeconds ?? (Number.isInteger(envTtl) && envTtl >= 1 && envTtl <= MAX_TOKEN_TTL_SECONDS ? envTtl : TOKEN_TTL_SECONDS);
     let seed = opts.seed;
     if (!seed) {
       const env = process.env.BROKER_ED25519_SEED;
@@ -100,15 +119,29 @@ export class CredentialBroker {
     return this.current.kid;
   }
 
+  public getTtlSeconds(): number {
+    return this.ttlSeconds;
+  }
+
+  /** Configure the lifetime of NEWLY issued tokens: integer 1..120 seconds. */
+  public setTtl(seconds: number): number {
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_TOKEN_TTL_SECONDS) {
+      throw new Error(`TTL must be an integer between 1 and ${MAX_TOKEN_TTL_SECONDS} seconds`);
+    }
+    this.ttlSeconds = seconds;
+    return seconds;
+  }
+
   /** Rotate the signing key. The previous PUBLIC key is accepted for at most one token TTL. */
   public rotateKey(seed: Buffer = crypto.randomBytes(32)): { oldKid: string; newKid: string } {
     const oldKid = this.current.kid;
     this.previous = {
       publicKey: this.current.publicKey,
       kid: oldKid,
-      notAfterMs: this.now() + TOKEN_TTL_SECONDS * 1000,
+      notAfterMs: this.now() + Math.max(this.ttlSeconds, TOKEN_TTL_SECONDS) * 1000,
     };
     this.current = keyPairFromSeed(seed);
+    this.observer?.onKeyRotated?.({ oldKid, newKid: this.current.kid });
     return { oldKid, newKid: this.current.kid };
   }
 
@@ -132,7 +165,25 @@ export class CredentialBroker {
 
   private cleanup(nowMs: number): void {
     for (const [jti, expMs] of this.revoked) if (expMs < nowMs - 5000) this.revoked.delete(jti);
-    for (const [jti, v] of this.outstanding) if (v.expMs < nowMs) this.outstanding.delete(jti);
+    this.sweepExpired(nowMs);
+  }
+
+  /** Tokens that reached their expiry without being redeemed or revoked are recorded as EXPIRED once. */
+  public sweepExpired(nowMs: number = this.now()): number {
+    let n = 0;
+    for (const [jti, v] of this.outstanding) {
+      if (v.expMs < nowMs) {
+        this.outstanding.delete(jti);
+        this.observer?.onExpired?.({ jti, sub: v.sub, sessionId: v.sessionId, tool: v.tool });
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** The tool server reports a successful redemption (no signing capability is conveyed). */
+  public markRedeemed(jti: string): void {
+    this.outstanding.delete(jti);
   }
 
   /**
@@ -160,30 +211,34 @@ export class CredentialBroker {
       ...(params.approvalId ? { approvalId: params.approvalId } : {}),
       iat,
       nbf: iat,
-      exp: iat + TOKEN_TTL_SECONDS,
+      exp: iat + this.ttlSeconds,
       aud: TOKEN_AUDIENCE,
     };
     const header = { alg: 'EdDSA', typ: 'JWT', kid: this.current.kid };
     const h = Buffer.from(JSON.stringify(header)).toString('base64url');
     const p = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const sig = crypto.sign(null, Buffer.from(`${h}.${p}`), this.current.privateKey).toString('base64url');
-    this.outstanding.set(claims.jti, { sub: claims.sub, expMs: claims.exp * 1000 });
+    this.outstanding.set(claims.jti, { sub: claims.sub, sessionId: claims.sessionId, tool: claims.tool, expMs: claims.exp * 1000 });
+    this.observer?.onIssued?.(claims, this.ttlSeconds);
     return { token: `${h}.${p}.${sig}`, claims };
   }
 
-  public revokeToken(jti: string, expMs?: number): void {
-    this.revoked.set(jti, expMs ?? this.now() + TOKEN_TTL_SECONDS * 1000);
+  public revokeToken(jti: string, expMs?: number, reason = 'revoked by operator'): void {
+    const known = this.outstanding.get(jti);
+    this.revoked.set(jti, expMs ?? this.now() + MAX_TOKEN_TTL_SECONDS * 1000);
     this.outstanding.delete(jti);
+    this.observer?.onRevoked?.({ jti, sub: known?.sub ?? 'unknown', sessionId: known?.sessionId, tool: known?.tool, reason });
   }
 
   /** Kill switch: revoke every outstanding token of the agent. Returns the number revoked. */
-  public revokeAgent(agentId: string): number {
+  public revokeAgent(agentId: string, reason = 'kill switch'): number {
     this.cleanup(this.now());
     let n = 0;
-    for (const [jti, v] of this.outstanding) {
+    for (const [jti, v] of Array.from(this.outstanding)) {
       if (v.sub === agentId) {
         this.revoked.set(jti, v.expMs);
         this.outstanding.delete(jti);
+        this.observer?.onRevoked?.({ jti, sub: v.sub, sessionId: v.sessionId, tool: v.tool, reason });
         n++;
       }
     }
@@ -237,21 +292,34 @@ export class TokenVerifier {
   private seen = new Map<string, number>(); // jti -> expMs
   private now: () => number;
 
+  public observer?: CredentialObserver;
+
   constructor(
     private registry: PublicKeyRegistry,
     private revocations: RevocationList,
-    opts: { now?: () => number } = {}
+    opts: { now?: () => number; observer?: CredentialObserver } = {}
   ) {
     this.now = opts.now ?? Date.now;
+    this.observer = opts.observer;
   }
 
   private fail(code: VerifyCode, error: string): TokenVerificationResult {
     return { valid: false, code, error };
   }
 
-  public verify(
+  /** Verifies and reports the outcome (accepted / rejected with reason) to the observer. */
+  public verify(token: unknown, req: { tool: string; sessionId: string; args: Record<string, unknown> }): TokenVerificationResult {
+    const seen: { claims?: ScopedTokenClaims } = {};
+    const result = this.verifyInner(token, req, seen);
+    if (result.valid && result.claims) this.observer?.onRedeemed?.(result.claims);
+    else this.observer?.onRejected?.({ code: result.code ?? 'UNKNOWN', error: result.error ?? 'rejected', tool: String(req.tool).slice(0, 60), sessionId: String(req.sessionId).slice(0, 100), claims: seen.claims });
+    return result;
+  }
+
+  private verifyInner(
     token: unknown,
-    req: { tool: string; sessionId: string; args: Record<string, unknown> }
+    req: { tool: string; sessionId: string; args: Record<string, unknown> },
+    seenOut: { claims?: ScopedTokenClaims }
   ): TokenVerificationResult {
     const nowMs = this.now();
     for (const [jti, expMs] of this.seen) if (expMs < nowMs - 5000) this.seen.delete(jti);
@@ -289,13 +357,14 @@ export class TokenVerifier {
     } catch {
       return this.fail('BAD_CLAIMS', 'Token claims are malformed');
     }
+    seenOut.claims = claims;
 
     if (!safeEqual(claims.aud, TOKEN_AUDIENCE)) return this.fail('BAD_AUDIENCE', `Invalid audience "${claims.aud.slice(0, 60)}"`);
     const nowS = Math.floor(nowMs / 1000);
     if (nowS < claims.nbf) return this.fail('NOT_YET_VALID', 'Token is not yet valid (nbf)');
     if (nowS > claims.exp) return this.fail('EXPIRED', `Token expired at ${new Date(claims.exp * 1000).toISOString()}`);
-    if (claims.exp - claims.iat > TOKEN_TTL_SECONDS || claims.exp <= claims.iat) {
-      return this.fail('BAD_LIFETIME', `Token lifetime exceeds ${TOKEN_TTL_SECONDS}s`);
+    if (claims.exp - claims.iat > MAX_TOKEN_TTL_SECONDS || claims.exp <= claims.iat) {
+      return this.fail('BAD_LIFETIME', `Token lifetime exceeds ${MAX_TOKEN_TTL_SECONDS}s`);
     }
     if (this.revocations.isRevoked(claims.jti)) return this.fail('REVOKED', `Token ${claims.jti.slice(0, 12)}... has been revoked`);
 
@@ -325,3 +394,18 @@ export class TokenVerifier {
 
 export const credentialBroker = new CredentialBroker();
 export const tokenVerifier = new TokenVerifier(credentialBroker.createPublicView(), credentialBroker.createPublicView());
+// The tool server tells the broker which tokens were redeemed so only unused ones can expire/be revoked.
+tokenVerifier.observer = { onRedeemed: (c) => credentialBroker.markRedeemed(c.jti) };
+
+/** Fans one event out to several observers (ledger + broker bookkeeping). */
+export function combineObservers(...obs: Array<CredentialObserver | undefined>): CredentialObserver {
+  const list = obs.filter((o): o is CredentialObserver => Boolean(o));
+  return {
+    onIssued: (c, t) => list.forEach((o) => o.onIssued?.(c, t)),
+    onRedeemed: (c) => list.forEach((o) => o.onRedeemed?.(c)),
+    onRejected: (i) => list.forEach((o) => o.onRejected?.(i)),
+    onRevoked: (i) => list.forEach((o) => o.onRevoked?.(i)),
+    onExpired: (i) => list.forEach((o) => o.onExpired?.(i)),
+    onKeyRotated: (i) => list.forEach((o) => o.onKeyRotated?.(i)),
+  };
+}

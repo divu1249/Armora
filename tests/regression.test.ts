@@ -21,9 +21,13 @@ const itemNames: Record<number, string> = {
   7: 'API hardening',
   8: 'Gemini',
   9: 'README',
+  10: 'Gateway endpoints',
+  11: 'Prevention',
+  12: 'Blast radius, ledger, evidence, logs',
+  13: 'No standing credentials',
 };
 
-for (let item = 0; item <= 9; item++) {
+for (let item = 0; item <= 13; item++) {
   describe(`Item ${item}: ${itemNames[item]}`, () => {
     const cases = ALL_REGRESSION_CASES.filter((c) => c.item === item);
     it('has regression cases', () => {
