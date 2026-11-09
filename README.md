@@ -140,7 +140,7 @@ npm run build
 NODE_ENV=production ADMIN_TOKEN=... BROKER_ED25519_SEED=... AUDIT_HMAC_KEY=... APP_URL=https://your.host npm start
 ```
 
-In production, mutating routes (approvals, policy, reset, app settings, kill switch, blocklist, MCP, traffic false-positive marking, anchor creation) need the `x-admin-token` header (or `Authorization: Bearer`). The UI has a field for it in the status banner. With no `ADMIN_TOKEN` configured those routes answer 503.
+In production, mutating routes (approvals, policy, reset, app settings, kill switch, blocklist, MCP, traffic false-positive marking, anchor creation) need the `x-admin-token` header (or `Authorization: Bearer`). The UI has a field for it in the user menu (top right). With no `ADMIN_TOKEN` configured those routes answer 503.
 
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `tsc --noEmit` and `vitest --run`.
 
@@ -175,3 +175,27 @@ CI (`.github/workflows/ci.yml`) runs `npm ci`, `tsc --noEmit` and `vitest --run`
 - **Local witness simulation**: the audit anchors.
 - **Provenance is a signal, not a guarantee**: R7 can be bypassed by paraphrasing (scenario S6).
 - `[BUILT]`, `[PROTOTYPE]`, `[SEEDED]`, `[PRECOMPUTED]`, `[ROADMAP]` chips as shown in the Real vs Simulated page.
+
+---
+
+## 7. Frontend
+
+React + Vite + Tailwind v4 + react-router. Routes are real URLs (back/forward and deep links work):
+
+| Path | Page |
+| --- | --- |
+| `/`, `/pricing`, `/docs` | Public landing, illustrative pricing, API docs |
+| `/app/overview`, `/app/feed` | Monitor |
+| `/app/policies`, `/app/credentials`, `/app/approvals`, `/app/apps` | Protect |
+| `/app/incidents`, `/app/incidents/:id`, `/app/audit`, `/app/intelligence`, `/app/traffic` | Investigate |
+| `/app/compliance`, `/app/redteam`, `/app/mcp` | Govern |
+| `/app/compare`, `/app/real-vs-simulated`, `/app/selftest` | Learn (split-screen comparison, honesty page, self-test) |
+| `/app/settings` | Organization, roles (mock), gateway authentication, billing (illustrative) |
+
+- **One brand config**: `src/brand.ts` holds the name, tagline and both color palettes. `src/index.css` carries dark fallback values; a regression case fails if they drift.
+- **Design system**: `src/ui/` (Button, Badge, Card, Tabs, Dialog, Drawer, Toast, Tooltip, Skeleton, StatTile, DataTable, Timeline, CodeBlock, KeyValue, EmptyState, PageHeader). Tokens are semantic Tailwind utilities (`bg-surface`, `text-fg`, `text-danger`, ...). Fonts (Inter, JetBrains Mono) are self-hosted via `@fontsource-variable/*`, so the UI works offline.
+- **Pure logic** lives in `src/lib/` (table sorting and pagination, KPI math, notifications, onboarding, policy editing, diff) and is unit-tested without a browser.
+- **Pages are lazy-loaded** per route and wrapped in an error boundary.
+- Several older pages (live feed, approvals, apps, compare, compliance, red team, intelligence, traffic, MCP, self-test, guided tour) were restyled to the tokens but keep their original layout.
+- **Accessibility**: contrast of every token pair is checked against WCAG AA in a test, dialogs trap focus, there is a skip link and visible focus rings. A Lighthouse score has **not** been measured for this build, so no score is claimed.
+- Marketing pages contain no customer logos, testimonials or invented statistics; a test scans for them. Any number on them is counted from the running server's own data and says so.

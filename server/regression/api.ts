@@ -67,7 +67,7 @@ export const apiCases = suite(7, 'Regression 7: API hardening', [
     const t = src('server/app.ts');
     if (!t) return skip('source not available');
     const routes = [...t.matchAll(/app\.(post|patch|put|delete)\(\s*'([^']+)'([^\n]*)/g)];
-    const computeOnly = new Set(['/api/agent/run', '/api/policy/dry-run', '/api/redteam/run', '/api/redteam/adaptive', '/api/redteam/report/html']);
+    const computeOnly = new Set(['/api/agent/run', '/api/policy/dry-run', '/api/policy/validate', '/api/redteam/run', '/api/redteam/adaptive', '/api/redteam/report/html']);
     const unprotected = routes.filter((m) => !m[3].includes('admin') && !computeOnly.has(m[2])).map((m) => m[2]);
     return eq([], unprotected, `${routes.length} mutating routes inspected`);
   }],

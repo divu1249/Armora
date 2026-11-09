@@ -15,6 +15,6 @@ describe('/selftest report', () => {
     expect(failed).toEqual([]);
     expect(report.allPassed).toBe(true);
     const items = new Set(Object.values(report.suites).flatMap((s) => s.results.map((r) => r.item)).filter((i) => i !== undefined));
-    for (let i = 0; i <= 13; i++) expect(items.has(i)).toBe(true);
+    for (let i = 0; i <= 14; i++) expect(items.has(i)).toBe(true);
   });
 });

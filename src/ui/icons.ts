@@ -1,0 +1,41 @@
+import {
+  Boxes,
+  CheckSquare,
+  ClipboardCheck,
+  Crosshair,
+  FileClock,
+  FlaskConical,
+  Globe,
+  Layers,
+  LayoutDashboard,
+  KeyRound,
+  Radio,
+  ScrollText,
+  Server,
+  Settings,
+  ShieldAlert,
+  Split,
+  TrendingUp,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+/** Icon name (from the nav model) -> component. */
+export const NAV_ICONS: Record<string, LucideIcon> = {
+  LayoutDashboard,
+  Radio,
+  ScrollText,
+  KeyRound,
+  CheckSquare,
+  Boxes,
+  ShieldAlert,
+  FileClock,
+  Globe,
+  TrendingUp,
+  ClipboardCheck,
+  Crosshair,
+  Server,
+  Split,
+  Layers,
+  FlaskConical,
+  Settings,
+};

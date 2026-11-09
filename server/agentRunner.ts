@@ -20,7 +20,7 @@ import { detectPromptInjection } from './detectors/injection.ts';
 import { detectPiiAndSecrets, redactPii } from './detectors/pii.ts';
 import { checkCanaryLeak, SYSTEM_CANARY_TOKEN } from './detectors/canary.ts';
 import { detectOutputExfiltration } from './detectors/exfiltration.ts';
-import { policyEngine } from './policyEngine.ts';
+import { policyEngine, PolicyEngine } from './policyEngine.ts';
 import { credentialBroker, tokenVerifier } from './credentialBroker.ts';
 import { executionService } from './services.ts';
 import { ExecutionOutcome } from './executionService.ts';
@@ -471,6 +471,8 @@ export class AgentRunner {
     segments: Segment[];
     firewallMode?: FirewallMode;
     sessionState?: { untrustedIngested?: boolean; privateDataAccessed?: boolean };
+    /** draft policy to test (already validated by the caller) */
+    policyYaml?: string;
   }): {
     decision: GateDecision;
     findings: Finding[];
@@ -497,8 +499,9 @@ export class AgentRunner {
 
     const argCheck = validateToolArgs(params.toolCall.tool, params.toolCall.args);
     const mode = params.firewallMode || 'enforce';
+    const engine = params.policyYaml ? new PolicyEngine(params.policyYaml) : policyEngine;
     const decision: GateDecision = argCheck.ok
-      ? policyEngine.evaluate({
+      ? engine.evaluate({
           toolCall: { tool: params.toolCall.tool, args: argCheck.args },
           segments: processedSegments,
           findings,

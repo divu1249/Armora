@@ -221,6 +221,18 @@ export function parsePolicyYaml(
   return { ok: true, policy: parsed.data };
 }
 
+/** Validation without saving (used by the policy editor for live feedback). */
+export function validatePolicy(yamlContent: unknown): { ok: boolean; error?: string; warnings: string[]; rules: string[] } {
+  const r = parsePolicyYaml(yamlContent);
+  if (!r.ok) return { ok: false, error: r.error, warnings: [], rules: [] };
+  const present = new Set(r.policy.rules.map((x) => x.id));
+  return {
+    ok: true,
+    warnings: KNOWN_RULE_IDS.filter((id) => !present.has(id)).map((id) => `Rule ${id} is not listed in this policy and would NOT be enforced.`),
+    rules: r.policy.rules.map((x) => x.id),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------

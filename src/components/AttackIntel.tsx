@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useOverlay } from '../ui/overlay.ts';
 import {
   Globe,
   Shield,
@@ -32,6 +33,7 @@ export const AttackIntel: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [blocklist, setBlocklist] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const addModalRef = useOverlay(showAddModal, () => setShowAddModal(false));
 
   // New Blocklist Entry Form state
   const [newIndicator, setNewIndicator] = useState('');
@@ -134,17 +136,17 @@ export const AttackIntel: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* 1. Source Indicator Mock Enrichment Panel */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4">
+      <div className="bg-surface border border-line rounded-lg p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-3 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Globe className="w-4 h-4 text-indigo-600" />
+            <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+              <Globe className="w-4 h-4 text-accent" />
               Source &amp; Indicator Enrichment
-              <span className="text-2xs font-mono text-slate-500 font-normal">
+              <span className="text-2xs font-mono text-muted font-normal">
                 [MOCK ENRICHMENT: Local Synthetic Table]
               </span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted mt-0.5">
               Enriches network and payload indicators without identity attribution or external lookups.
             </p>
           </div>
@@ -155,13 +157,13 @@ export const AttackIntel: React.FC = () => {
               value={indicatorQuery}
               onChange={(e) => setIndicatorQuery(e.target.value)}
               placeholder="Enter domain or email..."
-              className="text-xs bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 text-slate-800 w-56 font-mono"
+              className="text-xs bg-subtle border border-line-strong rounded px-2.5 py-1.5 text-fg w-56 font-mono"
             />
             <button
               type="button"
               disabled={loadingEnrichment}
               onClick={() => loadEnrichment(indicatorQuery)}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold shadow-xs transition-colors"
+              className="px-3 py-1.5 bg-accent-solid hover:brightness-110 text-on-solid rounded text-xs font-semibold shadow-xs transition-colors"
             >
               Enrich
             </button>
@@ -170,15 +172,15 @@ export const AttackIntel: React.FC = () => {
 
         {enrichment ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
+            <div className="p-3 bg-subtle border border-line rounded-lg space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-800">Indicator Metadata</span>
-                <span className="text-2xs font-mono bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-bold">
+                <span className="font-semibold text-fg">Indicator Metadata</span>
+                <span className="text-2xs font-mono bg-accent-solid/10 text-accent px-1.5 py-0.2 rounded font-bold">
                   {enrichment.sourceType.toUpperCase()}
                 </span>
               </div>
-              <div className="font-mono text-2xs space-y-1 text-slate-600">
-                <div>Target: <strong className="text-slate-900">{enrichment.indicator}</strong></div>
+              <div className="font-mono text-2xs space-y-1 text-fg2">
+                <div>Target: <strong className="text-fg">{enrichment.indicator}</strong></div>
                 <div>IP Address: {enrichment.ipAddress || 'N/A'}</div>
                 <div>ASN: {enrichment.asn || 'N/A'}</div>
                 <div>Tor / Hosting Relay: {enrichment.isTorOrHosting ? 'YES (High Risk)' : 'NO'}</div>
@@ -186,108 +188,108 @@ export const AttackIntel: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
+            <div className="p-3 bg-subtle border border-line rounded-lg space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-800">Email &amp; Domain Auth</span>
-                <span className="text-2xs font-mono bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded">
+                <span className="font-semibold text-fg">Email &amp; Domain Auth</span>
+                <span className="text-2xs font-mono bg-raised text-fg2 px-1.5 py-0.2 rounded">
                   Reputation: {enrichment.reputationScore}/100
                 </span>
               </div>
-              <div className="font-mono text-2xs space-y-1 text-slate-600">
+              <div className="font-mono text-2xs space-y-1 text-fg2">
                 <div className="flex justify-between">
                   <span>SPF Record:</span>
-                  <span className={enrichment.authResults?.spf === 'pass' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                  <span className={enrichment.authResults?.spf === 'pass' ? 'text-ok font-bold' : 'text-danger font-bold'}>
                     {enrichment.authResults?.spf?.toUpperCase() || 'NONE'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>DKIM Signature:</span>
-                  <span className={enrichment.authResults?.dkim === 'pass' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                  <span className={enrichment.authResults?.dkim === 'pass' ? 'text-ok font-bold' : 'text-danger font-bold'}>
                     {enrichment.authResults?.dkim?.toUpperCase() || 'NONE'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>DMARC Policy:</span>
-                  <span className={enrichment.authResults?.dmarc === 'pass' ? 'text-emerald-700 font-bold' : 'text-rose-700 font-bold'}>
+                  <span className={enrichment.authResults?.dmarc === 'pass' ? 'text-ok font-bold' : 'text-danger font-bold'}>
                     {enrichment.authResults?.dmarc?.toUpperCase() || 'NONE'}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
+            <div className="p-3 bg-subtle border border-line rounded-lg space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-800">Confidence Assessment</span>
+                <span className="font-semibold text-fg">Confidence Assessment</span>
                 <span
                   className={`text-2xs font-mono px-2 py-0.5 rounded font-bold ${
                     enrichment.confidence.level === 'HIGH'
-                      ? 'bg-rose-100 text-rose-800'
+                      ? 'bg-danger-solid/10 text-danger'
                       : enrichment.confidence.level === 'MEDIUM'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-emerald-100 text-emerald-800'
+                      ? 'bg-warn-solid/10 text-warn'
+                      : 'bg-ok-solid/10 text-ok'
                   }`}
                 >
                   CONFIDENCE: {enrichment.confidence.level}
                 </span>
               </div>
-              <ul className="text-2xs text-slate-600 space-y-1 list-disc pl-4">
+              <ul className="text-2xs text-fg2 space-y-1 list-disc pl-4">
                 {enrichment.confidence.reasons.map((r: string, idx: number) => (
                   <li key={idx}>{r}</li>
                 ))}
               </ul>
-              <div className="text-3xs text-slate-400 italic pt-1">
+              <div className="text-3xs text-muted italic pt-1">
                 Notice: Evaluates payload characteristics only; no individual person verdicts.
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-xs text-slate-500 text-center py-4">No indicator enriched.</div>
+          <div className="text-xs text-muted text-center py-4">No indicator enriched.</div>
         )}
       </div>
 
       {/* 2. SimHash Cross-App Attack Campaigns */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="border-b border-slate-200 pb-3 mb-4">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Radio className="w-4 h-4 text-rose-600" />
+      <div className="bg-surface border border-line rounded-lg p-5 shadow-2xs">
+        <div className="border-b border-line pb-3 mb-4">
+          <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+            <Radio className="w-4 h-4 text-danger" />
             Coordinated Attack Campaigns (SimHash Clusters)
-            <span className="text-2xs font-mono text-slate-500 font-normal">
+            <span className="text-2xs font-mono text-muted font-normal">
               [BUILT: 64-Bit Fuzzy Hash Clustering]
             </span>
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-muted mt-0.5">
             Groups semantically similar payloads across applications to track recurring threat actors across time.
           </p>
         </div>
 
         <div className="space-y-3">
           {campaigns.map((camp) => (
-            <div key={camp.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <div key={camp.id} className="p-4 bg-subtle border border-line rounded-lg">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-900">{camp.name}</span>
+                  <span className="text-xs font-bold text-fg">{camp.name}</span>
                   <span
                     className={`text-2xs font-mono font-bold px-1.5 py-0.2 rounded ${
-                      camp.severity === 'CRITICAL' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                      camp.severity === 'CRITICAL' ? 'bg-danger-solid/10 text-danger' : 'bg-warn-solid/10 text-warn'
                     }`}
                   >
                     {camp.severity}
                   </span>
-                  <span className="text-2xs font-mono text-slate-500">
+                  <span className="text-2xs font-mono text-muted">
                     SimHash: {camp.simHashRepresentative}
                   </span>
                 </div>
-                <div className="text-2xs text-slate-500 font-mono">
+                <div className="text-2xs text-muted font-mono">
                   {camp.incidentCount} Correlated Events · Targeted: {camp.appsTargeted.join(', ')}
                 </div>
               </div>
 
-              <p className="text-xs text-slate-700 mb-2 font-medium">{camp.targetObjective}</p>
+              <p className="text-xs text-fg2 mb-2 font-medium">{camp.targetObjective}</p>
 
-              <div className="bg-white p-2.5 rounded border border-slate-200 text-2xs font-mono text-slate-700 space-y-1">
-                <div className="text-slate-400 font-semibold uppercase text-3xs">Observed Payload Cluster:</div>
+              <div className="bg-surface p-2.5 rounded border border-line text-2xs font-mono text-fg2 space-y-1">
+                <div className="text-muted font-semibold uppercase text-3xs">Observed Payload Cluster:</div>
                 {camp.payloadClusters.map((p: string, idx: number) => (
-                  <div key={idx} className="truncate text-slate-800">
+                  <div key={idx} className="truncate text-fg">
                     • {p}
                   </div>
                 ))}
@@ -298,17 +300,17 @@ export const AttackIntel: React.FC = () => {
       </div>
 
       {/* 3. Blocklist Manager with STIX Export */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4">
+      <div className="bg-surface border border-line rounded-lg p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-3 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-amber-600" />
+            <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-warn" />
               Dynamic Policy Blocklist &amp; Allowlist Manager
-              <span className="text-2xs font-mono text-slate-500 font-normal">
+              <span className="text-2xs font-mono text-muted font-normal">
                 [BUILT: Human-Approval Required Before Block]
               </span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted mt-0.5">
               Maintains active network boundaries, domain restrictions, and appeal workflows with STIX 2.1 interoperability.
             </p>
           </div>
@@ -317,7 +319,7 @@ export const AttackIntel: React.FC = () => {
             <button
               type="button"
               onClick={handleExportStix}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 bg-subtle hover:bg-raised text-fg2 border border-line-strong rounded text-xs font-semibold transition-colors flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
               Export STIX 2.1
@@ -325,7 +327,7 @@ export const AttackIntel: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowAddModal(true)}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 bg-accent-solid hover:brightness-110 text-on-solid rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Indicator
@@ -335,7 +337,7 @@ export const AttackIntel: React.FC = () => {
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+            <thead className="bg-subtle border-b border-line text-fg2 font-semibold">
               <tr>
                 <th className="py-2.5 px-3">Indicator</th>
                 <th className="py-2.5 px-3">Type</th>
@@ -346,33 +348,33 @@ export const AttackIntel: React.FC = () => {
                 <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-mono text-2xs">
+            <tbody className="divide-y divide-line font-mono text-2xs">
               {blocklist.map((entry) => (
-                <tr key={entry.id} className="hover:bg-slate-50/50">
-                  <td className="py-2.5 px-3 font-bold text-slate-900">{entry.indicator}</td>
-                  <td className="py-2.5 px-3 uppercase text-slate-600">{entry.type}</td>
-                  <td className="py-2.5 px-3 capitalize text-slate-600">{entry.scope}</td>
-                  <td className="py-2.5 px-3 uppercase text-slate-700 font-semibold">{entry.mode}</td>
+                <tr key={entry.id} className="hover:bg-subtle/50">
+                  <td className="py-2.5 px-3 font-bold text-fg">{entry.indicator}</td>
+                  <td className="py-2.5 px-3 uppercase text-fg2">{entry.type}</td>
+                  <td className="py-2.5 px-3 capitalize text-fg2">{entry.scope}</td>
+                  <td className="py-2.5 px-3 uppercase text-fg2 font-semibold">{entry.mode}</td>
                   <td className="py-2.5 px-3">
                     <span
                       className={`px-1.5 py-0.5 rounded font-bold ${
                         entry.status === 'ACTIVE'
-                          ? 'bg-rose-100 text-rose-800'
+                          ? 'bg-danger-solid/10 text-danger'
                           : entry.status === 'PENDING_APPROVAL'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-emerald-100 text-emerald-800'
+                          ? 'bg-warn-solid/10 text-warn'
+                          : 'bg-ok-solid/10 text-ok'
                       }`}
                     >
                       {entry.status}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 text-slate-600 font-sans max-w-xs truncate">{entry.appealNote || '—'}</td>
+                  <td className="py-2.5 px-3 text-fg2 font-sans max-w-xs truncate">{entry.appealNote || '—'}</td>
                   <td className="py-2.5 px-3 text-right space-x-1.5">
                     {entry.status === 'PENDING_APPROVAL' && (
                       <button
                         type="button"
                         onClick={() => handleApprove(entry.id)}
-                        className="px-2 py-0.8 bg-emerald-600 text-white rounded font-sans text-2xs font-semibold hover:bg-emerald-700"
+                        className="px-2 py-0.8 bg-ok-solid text-on-solid rounded font-sans text-2xs font-semibold hover:brightness-110"
                       >
                         Approve Block
                       </button>
@@ -381,7 +383,7 @@ export const AttackIntel: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleAllowlist(entry.id)}
-                        className="px-2 py-0.8 bg-slate-200 text-slate-800 rounded font-sans text-2xs font-semibold hover:bg-slate-300"
+                        className="px-2 py-0.8 bg-raised text-fg rounded font-sans text-2xs font-semibold hover:bg-line-strong"
                       >
                         Allowlist
                       </button>
@@ -395,48 +397,48 @@ export const AttackIntel: React.FC = () => {
       </div>
 
       {/* 4. Disabled Shared Threat Feed Card (ROADMAP) */}
-      <div className="p-5 border border-purple-200 bg-purple-50/60 rounded-lg opacity-85">
+      <div className="p-5 border border-info-solid/40 bg-info-solid/10 rounded-lg opacity-85">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-purple-700" />
-            <h4 className="text-xs font-bold text-purple-950 uppercase tracking-wide">
+            <Lock className="w-4 h-4 text-info" />
+            <h4 className="text-xs font-bold text-info uppercase tracking-wide">
               Shared Cross-Tenant Threat Feed
             </h4>
           </div>
-          <span className="text-2xs font-mono font-bold bg-purple-200 text-purple-900 px-2 py-0.5 rounded">
+          <span className="text-2xs font-mono font-bold bg-info-solid/10 text-info px-2 py-0.5 rounded">
             [ROADMAP]
           </span>
         </div>
-        <p className="text-xs text-purple-900 leading-relaxed">
+        <p className="text-xs text-info leading-relaxed">
           Decentralized threat intelligence sharing requires verified enterprise tenant identities and cryptographic privacy-preserving differential reporting controls before cross-organization aggregation can be safely enabled.
         </p>
       </div>
 
       {/* Add Indicator Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-4">
-            <h4 className="text-sm font-bold text-slate-900">Add Indicator to Blocklist</h4>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div ref={addModalRef} role="dialog" aria-modal="true" aria-label="Add indicator to blocklist" tabIndex={-1} className="bg-surface rounded-lg shadow-xl max-w-md w-full p-5 space-y-4">
+            <h4 className="text-sm font-bold text-fg">Add Indicator to Blocklist</h4>
             <form onSubmit={handleCreateBlocklistEntry} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Indicator (Domain, Email, IP)</label>
+                <label className="block text-fg2 font-semibold mb-1">Indicator (Domain, Email, IP)</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. malformed-sink.org"
                   value={newIndicator}
                   onChange={(e) => setNewIndicator(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 font-mono"
+                  className="w-full bg-subtle border border-line-strong rounded px-2.5 py-1.5 font-mono"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Type</label>
+                  <label className="block text-fg2 font-semibold mb-1">Type</label>
                   <select
                     value={newType}
                     onChange={(e) => setNewType(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1.5"
+                    className="w-full bg-subtle border border-line-strong rounded px-2 py-1.5"
                   >
                     <option value="domain">Domain</option>
                     <option value="email">Email</option>
@@ -445,11 +447,11 @@ export const AttackIntel: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Scope</label>
+                  <label className="block text-fg2 font-semibold mb-1">Scope</label>
                   <select
                     value={newScope}
                     onChange={(e) => setNewScope(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1.5"
+                    className="w-full bg-subtle border border-line-strong rounded px-2 py-1.5"
                   >
                     <option value="organization">Organization-Wide</option>
                     <option value="app">App Specific</option>
@@ -458,27 +460,27 @@ export const AttackIntel: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Appeal / Security Note</label>
+                <label className="block text-fg2 font-semibold mb-1">Appeal / Security Note</label>
                 <textarea
                   rows={2}
                   placeholder="Reason for blocking..."
                   value={newAppealNote}
                   onChange={(e) => setNewAppealNote(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5"
+                  className="w-full bg-subtle border border-line-strong rounded px-2.5 py-1.5"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <div className="flex justify-end gap-2 pt-2 border-t border-line">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-semibold"
+                  className="px-3 py-1.5 bg-subtle hover:bg-raised text-fg2 rounded font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-semibold"
+                  className="px-3 py-1.5 bg-accent-solid hover:brightness-110 text-on-solid rounded font-semibold"
                 >
                   Save (Pending Approval)
                 </button>
