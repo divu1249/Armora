@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import { agentRunner, subscribeToEvents } from './agentRunner.ts';
 import { auditLog, AUDIT_ANCHOR_NOTE, AUDIT_INTEGRITY_NOTE } from './auditLog.ts';
-import { policyEngine, TOOL_TAXONOMY, SEEDED_POLICY_VERSIONS } from './policyEngine.ts';
+import { policyEngine, TOOL_TAXONOMY, SEEDED_POLICY_VERSIONS, validatePolicy } from './policyEngine.ts';
 import { OWASP_LLM_COMPLIANCE_MATRIX } from './compliance.ts';
 import { protectedToolServer } from './protectedTools.ts';
 import { runAllSelfTests } from './selfTest.ts';
@@ -44,8 +44,8 @@ export function createApp(cfg: AppConfig) {
             directives: {
               'default-src': ["'self'"],
               'script-src': ["'self'"],
-              'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-              'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
+              'style-src': ["'self'", "'unsafe-inline'"],
+              'font-src': ["'self'", 'data:'],
               'img-src': ["'self'", 'data:'],
               'connect-src': ["'self'"],
               'object-src': ["'none'"],
@@ -171,7 +171,18 @@ export function createApp(cfg: AppConfig) {
     }
     res.json({ success: true, message: 'Policy successfully updated', warnings: result.warnings });
   });
+  // compute-only: validates a draft policy without saving it
+  app.post('/api/policy/validate', body(S.PolicyBody), (req, res) => {
+    res.json(validatePolicy(req.body.yamlContent));
+  });
   app.post('/api/policy/dry-run', body(S.DryRunBody), (req, res) => {
+    if (req.body.policyYaml) {
+      const v = validatePolicy(req.body.policyYaml);
+      if (!v.ok) {
+        res.status(400).json({ error: `Draft policy is invalid: ${v.error}` });
+        return;
+      }
+    }
     res.json(agentRunner.dryRun(req.body));
   });
   app.get('/api/policy/versions', (_req, res) => {

@@ -13,6 +13,8 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/cors": "^2.8.19",
@@ -20,18 +22,17 @@
     "@vitejs/plugin-react": "^6.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
+    "email-addresses": "^5.0.0",
     "express": "^4.21.2",
     "express-rate-limit": "^8.7.3",
     "helmet": "^8.3.0",
     "js-yaml": "^5.5.0",
     "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "recharts": "^3.10.1",
+    "react-router-dom": "^7.9.0",
     "vite": "^8.3.0",
-    "zod": "^3.25.76",
-    "email-addresses": "^5.0.0"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -157,35 +157,35 @@ export const RealVsSimulatedPage: React.FC = () => {
   const getStatusBadge = (status: FeatureItem['status']) => {
     switch (status) {
       case 'BUILT':
-        return 'bg-emerald-950 text-emerald-300 border-emerald-800';
+        return 'bg-ok-solid text-ok border-ok-solid/40';
       case 'PROTOTYPE':
-        return 'bg-cyan-950 text-cyan-300 border-cyan-800';
+        return 'bg-accent-solid text-accent border-accent-solid/40';
       case 'SEEDED':
-        return 'bg-blue-950 text-blue-300 border-blue-800';
+        return 'bg-accent-solid text-accent border-accent-solid/40';
       case 'PRECOMPUTED':
-        return 'bg-indigo-950 text-indigo-300 border-indigo-800';
+        return 'bg-accent-solid text-accent border-accent-solid/40';
       case 'MOCK ENRICHMENT':
-        return 'bg-amber-950 text-amber-300 border-amber-800';
+        return 'bg-warn-solid text-warn border-warn-solid/40';
       case 'ROADMAP':
-        return 'bg-slate-800 text-slate-400 border-slate-700';
+        return 'bg-raised text-muted border-line-strong';
       default:
-        return 'bg-slate-800 text-slate-400 border-slate-700';
+        return 'bg-raised text-muted border-line-strong';
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="bg-surface border border-line rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-line pb-4">
           <div>
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-accent" />
               What is Real vs. Simulated
-              <span className="text-2xs font-mono text-cyan-300 bg-cyan-950 border border-cyan-850 px-2 py-0.5 rounded">
+              <span className="text-2xs font-mono text-accent bg-accent-solid border border-accent-solid/40 px-2 py-0.5 rounded">
                 [Honest Engineering Audit]
               </span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-muted mt-0.5">
               Transparent breakdown of pure algorithmic code, synthetic datasets, and precomputed models in this prototype.
             </p>
           </div>
@@ -194,7 +194,7 @@ export const RealVsSimulatedPage: React.FC = () => {
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="bg-[#0b1329] border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
+              className="bg-subtle border border-line rounded-lg px-2.5 py-1 text-xs text-fg2 focus:outline-none focus:border-accent-solid/40"
             >
               {categories.map((c) => (
                 <option key={c} value={c}>
@@ -206,7 +206,7 @@ export const RealVsSimulatedPage: React.FC = () => {
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-[#0b1329] border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
+              className="bg-subtle border border-line rounded-lg px-2.5 py-1 text-xs text-fg2 focus:outline-none focus:border-accent-solid/40"
             >
               {statuses.map((s) => (
                 <option key={s} value={s}>
@@ -218,20 +218,20 @@ export const RealVsSimulatedPage: React.FC = () => {
         </div>
 
         {/* Top Warning Banner */}
-        <div className="p-3 bg-amber-950/40 border border-amber-800/60 text-amber-200 rounded-lg text-xs flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+        <div className="p-3 bg-warn-solid/10 border border-warn-solid/40 text-warn rounded-lg text-xs flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-warn mt-0.5 shrink-0" />
           <div className="leading-relaxed">
-            <strong className="text-white">Engineering Honesty Guarantee: </strong>
+            <strong className="text-fg">Engineering Honesty Guarantee: </strong>
             Every detector, credential broker, and hash chain is implemented with mathematically verifiable TypeScript code. All PII, candidate records, orders, and threat IPs are 100% synthetic. No real citizen data is ever processed, and no claims of 100% protection or personal attacker identification are made.
           </div>
         </div>
       </div>
 
       {/* Table of Features */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-surface border border-line rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-[#0b1329] border-b border-slate-800 text-2xs text-slate-400 font-mono uppercase tracking-wider">
+            <thead className="bg-subtle border-b border-line text-2xs text-muted font-mono uppercase tracking-wider">
               <tr>
                 <th className="py-3 px-4">Feature / Module</th>
                 <th className="py-3 px-4">Status</th>
@@ -240,25 +240,25 @@ export const RealVsSimulatedPage: React.FC = () => {
                 <th className="py-3 px-4">Architecture Rationale</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80">
+            <tbody className="divide-y divide-line">
               {filtered.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/30 transition-colors duration-150">
+                <tr key={idx} className="hover:bg-subtle transition-colors duration-150">
                   <td className="py-3 px-4 align-top">
-                    <div className="font-semibold text-white">{item.name}</div>
-                    <div className="text-2xs font-mono text-slate-500">{item.category}</div>
+                    <div className="font-semibold text-fg">{item.name}</div>
+                    <div className="text-2xs font-mono text-muted">{item.category}</div>
                   </td>
                   <td className="py-3 px-4 align-top whitespace-nowrap">
                     <span className={`px-2 py-0.5 rounded text-2xs font-mono border font-bold ${getStatusBadge(item.status)}`}>
                       [{item.status}]
                     </span>
                   </td>
-                  <td className="py-3 px-4 align-top text-slate-300 leading-relaxed max-w-xs">
+                  <td className="py-3 px-4 align-top text-fg2 leading-relaxed max-w-xs">
                     {item.realAspect}
                   </td>
-                  <td className="py-3 px-4 align-top text-slate-400 leading-relaxed max-w-xs">
+                  <td className="py-3 px-4 align-top text-muted leading-relaxed max-w-xs">
                     {item.simulatedAspect}
                   </td>
-                  <td className="py-3 px-4 align-top text-2xs font-mono text-cyan-300/80 leading-relaxed max-w-xs">
+                  <td className="py-3 px-4 align-top text-2xs font-mono text-accent leading-relaxed max-w-xs">
                     {item.notes}
                   </td>
                 </tr>

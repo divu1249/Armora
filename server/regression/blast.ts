@@ -119,7 +119,7 @@ export const blastCases = suite(12, 'Regression 12: Blast radius, ledger, eviden
     return eq({ offsets: expected, steps: events.length, monotonic: true, hasGap: true }, { offsets: steps.map((x) => x.timeOffsetMs), steps: steps.length, monotonic: steps.every((x, i) => i === 0 || x.timeOffsetMs >= steps[i - 1].timeOffsetMs), hasGap: steps.some((x) => x.timeOffsetMs >= 1500) });
   }],
   ['replay UI has play, pause and step controls', () => {
-    const t = src('src/components/IncidentResponse.tsx');
+    const t = src('src/features/incident/ReplayTimeline.tsx');
     if (!t) return skip('source not available');
     return yes(/Play/.test(t) && /Pause/.test(t) && /Step/.test(t) && /timeOffsetMs/.test(t));
   }],

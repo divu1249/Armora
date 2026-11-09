@@ -208,6 +208,8 @@ export async function dryRunPolicy(params: {
   toolCall: unknown;
   segments: unknown[];
   firewallMode?: FirewallMode;
+  sessionState?: { untrustedIngested?: boolean; privateDataAccessed?: boolean };
+  policyYaml?: string;
 }): Promise<{ decision: GateDecision; findings: Finding[]; injectionScore: number }> {
   const res = await apiFetch('/api/policy/dry-run', {
     method: 'POST',
@@ -518,4 +520,23 @@ export async function rotateSigningKey(): Promise<{ oldKid: string; newKid: stri
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to rotate key');
   return data;
+}
+
+export async function fetchLedgerEvents(q: Record<string, unknown>): Promise<{ items: any[]; total: number }> {
+  const res = await apiFetch(`/api/ledger/events${qs(q)}`);
+  if (!res.ok) throw new Error('Failed to fetch ledger events');
+  return res.json();
+}
+
+export async function validatePolicyYaml(yamlContent: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; rules?: string[] }> {
+  const res = await apiFetch('/api/policy/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yamlContent }) });
+  const data = await res.json();
+  if (!res.ok) return { ok: false, error: data.error || 'Validation request failed' };
+  return data;
+}
+
+export async function fetchEvidenceBundleJson(sessionId: string): Promise<any> {
+  const res = await apiFetch(`/api/response/evidence/${encodeURIComponent(sessionId)}`);
+  if (!res.ok) throw new Error('Failed to build evidence bundle');
+  return res.json();
 }

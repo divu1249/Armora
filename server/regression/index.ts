@@ -13,6 +13,7 @@ import { gatewayCases } from './gateway.ts';
 import { preventionCases } from './prevention.ts';
 import { blastCases } from './blast.ts';
 import { credentialCases } from './credentials.ts';
+import { frontendCases } from './frontend.ts';
 
 /** One source of truth: vitest iterates these AND /selftest includes the non-live ones. */
 export const ALL_REGRESSION_CASES: RegressionCase[] = [
@@ -30,5 +31,6 @@ export const ALL_REGRESSION_CASES: RegressionCase[] = [
   ...preventionCases,
   ...blastCases,
   ...credentialCases,
+  ...frontendCases,
 ];
 export type { RegressionCase } from './helpers.ts';

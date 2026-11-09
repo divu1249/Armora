@@ -38,6 +38,8 @@ export const DryRunBody = z
     segments: z.array(segment).min(1).max(50),
     firewallMode: firewallMode.default('enforce'),
     sessionState: z.object({ untrustedIngested: z.boolean().optional(), privateDataAccessed: z.boolean().optional() }).strict().optional(),
+    /** evaluate against a DRAFT policy instead of the active one (not saved) */
+    policyYaml: z.string().max(100_000).optional(),
   })
   .strict();
 

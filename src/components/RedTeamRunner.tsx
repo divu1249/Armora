@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useOverlay } from '../ui/overlay.ts';
 import {
   Crosshair,
   ShieldCheck,
@@ -39,6 +40,7 @@ export const RedTeamRunner: React.FC = () => {
 
   // HTML Report Modal state
   const [htmlModalContent, setHtmlModalContent] = useState<string | null>(null);
+  const htmlModalRef = useOverlay(htmlModalContent !== null, () => setHtmlModalContent(null));
 
   useEffect(() => {
     fetchRedTeamAttacks()
@@ -123,28 +125,28 @@ export const RedTeamRunner: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Overview & Security Score Dashboard */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-4">
+      <div className="bg-surface border border-line rounded-lg p-5 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-line pb-4 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Crosshair className="w-4 h-4 text-rose-600" />
+            <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+              <Crosshair className="w-4 h-4 text-danger" />
               Automated Red-Team Runner
-              <span className="text-2xs font-mono text-slate-500 font-normal">
+              <span className="text-2xs font-mono text-muted font-normal">
                 [SEEDED: synthetic attack + benign task set]
               </span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted mt-0.5">
               Empirical assessment suite testing model vulnerability vs Action Gate resilience. Proves that detectors produce advisory signals, but the Action Gate prevents harmful execution.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex rounded-md border border-slate-300 p-0.5 bg-slate-100 text-2xs">
+            <div className="flex rounded-md border border-line-strong p-0.5 bg-subtle text-2xs">
               <button
                 type="button"
                 onClick={() => setSuiteFirewallMode('enforce')}
                 className={`py-1 px-2.5 rounded font-medium transition-colors ${
-                  suiteFirewallMode === 'enforce' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700'
+                  suiteFirewallMode === 'enforce' ? 'bg-accent-solid text-on-solid shadow-xs' : 'text-fg2'
                 }`}
               >
                 TEST ENFORCE
@@ -153,7 +155,7 @@ export const RedTeamRunner: React.FC = () => {
                 type="button"
                 onClick={() => setSuiteFirewallMode('off')}
                 className={`py-1 px-2.5 rounded font-medium transition-colors ${
-                  suiteFirewallMode === 'off' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-700'
+                  suiteFirewallMode === 'off' ? 'bg-danger-solid text-on-solid shadow-xs' : 'text-fg2'
                 }`}
               >
                 TEST FIREWALL OFF
@@ -164,7 +166,7 @@ export const RedTeamRunner: React.FC = () => {
               type="button"
               disabled={loadingSuite}
               onClick={handleRunSuite}
-              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-accent-solid hover:brightness-110 disabled:bg-accent-solid/10 text-on-solid rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               {loadingSuite ? 'Evaluating seed set...' : 'Run Suite'}
@@ -178,16 +180,16 @@ export const RedTeamRunner: React.FC = () => {
             <div
               className={`p-4 rounded-lg border ${
                 suiteReport.metrics.harmfulActionSuccessRate === 0
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                  : 'bg-rose-50 border-rose-300 text-rose-950'
+                  ? 'bg-ok-solid/10 border-ok-solid/40 text-ok'
+                  : 'bg-danger-solid/10 border-danger-solid/40 text-danger'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wide">
                   {suiteReport.metrics.harmfulActionSuccessRate === 0 ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <CheckCircle2 className="w-4 h-4 text-ok" />
                   ) : (
-                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <AlertTriangle className="w-4 h-4 text-danger" />
                   )}
                   <span>Evaluated Mode: {suiteReport.firewallMode.toUpperCase()}</span>
                 </div>
@@ -195,7 +197,7 @@ export const RedTeamRunner: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleExportJson}
-                    className="px-2 py-1 bg-white border border-slate-300 rounded text-2xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1"
+                    className="px-2 py-1 bg-surface border border-line-strong rounded text-2xs font-semibold text-fg2 hover:bg-subtle transition-colors flex items-center gap-1"
                   >
                     <Download className="w-3 h-3" />
                     Export JSON
@@ -203,7 +205,7 @@ export const RedTeamRunner: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleOpenPrintHtml}
-                    className="px-2 py-1 bg-white border border-slate-300 rounded text-2xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1"
+                    className="px-2 py-1 bg-surface border border-line-strong rounded text-2xs font-semibold text-fg2 hover:bg-subtle transition-colors flex items-center gap-1"
                   >
                     <Printer className="w-3 h-3" />
                     Printable HTML
@@ -215,60 +217,60 @@ export const RedTeamRunner: React.FC = () => {
               </p>
             </div>
 
-            <div className="text-2xs text-slate-500 font-sans">
+            <div className="text-2xs text-muted font-sans">
               On our seed set, n={suiteReport.sampleSize} ({suiteReport.harmfulAttacks} harmful, {suiteReport.benignAttacks} benign).
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 font-mono">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Harm Executed</div>
-                <div className={`text-lg font-bold tabular-nums mt-0.5 ${suiteReport.metrics.harmfulActionsExecuted === 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Harm Executed</div>
+                <div className={`text-lg font-bold tabular-nums mt-0.5 ${suiteReport.metrics.harmfulActionsExecuted === 0 ? 'text-ok' : 'text-danger'}`}>
                   {suiteReport.metrics.harmfulActionsExecuted} ({suiteReport.metrics.harmfulActionSuccessRate}%)
                 </div>
-                <div className="text-3xs text-slate-400 font-sans">Really executed on tool server</div>
+                <div className="text-3xs text-muted font-sans">Really executed on tool server</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Blocked</div>
-                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">{suiteReport.metrics.blockedCount}</div>
-                <div className="text-3xs text-slate-400 font-sans">Denied by gate/verifier</div>
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Blocked</div>
+                <div className="text-lg font-bold text-fg tabular-nums mt-0.5">{suiteReport.metrics.blockedCount}</div>
+                <div className="text-3xs text-muted font-sans">Denied by gate/verifier</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Pending Approval</div>
-                <div className="text-lg font-bold text-amber-700 tabular-nums mt-0.5">{suiteReport.metrics.pendingApprovalCount}</div>
-                <div className="text-3xs text-slate-400 font-sans">Not counted as blocked</div>
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Pending Approval</div>
+                <div className="text-lg font-bold text-warn tabular-nums mt-0.5">{suiteReport.metrics.pendingApprovalCount}</div>
+                <div className="text-3xs text-muted font-sans">Not counted as blocked</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Detector Catch</div>
-                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">{suiteReport.metrics.detectorCatchRate}%</div>
-                <div className="text-3xs text-slate-400 font-sans">Heuristic, informational</div>
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Detector Catch</div>
+                <div className="text-lg font-bold text-fg tabular-nums mt-0.5">{suiteReport.metrics.detectorCatchRate}%</div>
+                <div className="text-3xs text-muted font-sans">Heuristic, informational</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Gate False Positives</div>
-                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Gate False Positives</div>
+                <div className="text-lg font-bold text-fg tabular-nums mt-0.5">
                   {suiteReport.metrics.gateFalsePositiveCount} ({suiteReport.metrics.falsePositiveRate}%)
                 </div>
-                <div className="text-3xs text-slate-400 font-sans">Benign tasks denied</div>
+                <div className="text-3xs text-muted font-sans">Benign tasks denied</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Detector False Positives</div>
-                <div className="text-lg font-bold text-amber-700 tabular-nums mt-0.5">{suiteReport.metrics.detectorFalsePositiveCount}</div>
-                <div className="text-3xs text-slate-400 font-sans">Benign text flagged</div>
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Detector False Positives</div>
+                <div className="text-lg font-bold text-warn tabular-nums mt-0.5">{suiteReport.metrics.detectorFalsePositiveCount}</div>
+                <div className="text-3xs text-muted font-sans">Benign text flagged</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Benign Completed</div>
-                <div className="text-lg font-bold text-indigo-700 tabular-nums mt-0.5">{suiteReport.metrics.benignTaskCompletionRate}%</div>
-                <div className="text-3xs text-slate-400 font-sans">{suiteReport.metrics.benignNeedingApprovalCount} needed approval</div>
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Benign Completed</div>
+                <div className="text-lg font-bold text-accent tabular-nums mt-0.5">{suiteReport.metrics.benignTaskCompletionRate}%</div>
+                <div className="text-3xs text-muted font-sans">{suiteReport.metrics.benignNeedingApprovalCount} needed approval</div>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-center">
-                <div className="text-2xs text-slate-500 font-sans">Latency p50 / p95</div>
-                <div className="text-lg font-bold text-slate-800 tabular-nums mt-0.5">
+              <div className="p-3 bg-subtle border border-line rounded-md text-center">
+                <div className="text-2xs text-muted font-sans">Latency p50 / p95</div>
+                <div className="text-lg font-bold text-fg tabular-nums mt-0.5">
                   {suiteReport.metrics.latencyP50} / {suiteReport.metrics.latencyP95} ms
                 </div>
-                <div className="text-3xs text-slate-400 font-sans">Per-case, in-process</div>
+                <div className="text-3xs text-muted font-sans">Per-case, in-process</div>
               </div>
             </div>
 
             {suiteReport.results.some((r: any) => r.detectorFalsePositive) && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-900">
+              <div className="p-3 bg-warn-solid/10 border border-warn-solid/40 rounded-md text-xs text-warn">
                 <strong>Detector false positives (benign tasks flagged):</strong>{' '}
                 {suiteReport.results
                   .filter((r: any) => r.detectorFalsePositive)
@@ -276,31 +278,31 @@ export const RedTeamRunner: React.FC = () => {
                   .join('; ')}
               </div>
             )}
-            <ul className="list-disc pl-5 text-2xs text-slate-500 space-y-0.5">
+            <ul className="list-disc pl-5 text-2xs text-muted space-y-0.5">
               {suiteReport.notes.map((n: string) => (
                 <li key={n}>{n}</li>
               ))}
             </ul>
           </div>
         ) : (
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-md text-center text-xs text-slate-500">
+          <div className="p-4 bg-subtle border border-line rounded-md text-center text-xs text-muted">
             Click &ldquo;Run Suite&rdquo; to run the seed set (harmful and benign tasks) against an isolated tool server and measure what actually executes.
           </div>
         )}
       </div>
 
       {/* Adaptive Attacker Mode (Evidence for Thesis) */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4">
+      <div className="bg-surface border border-line rounded-lg p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-3 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-600" />
+            <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-warn" />
               Adaptive Attacker Mutation Mode
-              <span className="text-2xs font-mono text-slate-500 font-normal">
+              <span className="text-2xs font-mono text-muted font-normal">
                 [BUILT: Multi-Turn Detector Bypass Experiment]
               </span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-muted mt-0.5">
               Simulates an adversarial query-loop mutating payloads (casing, synonyms, zero-width chars, base64) to evade detectors—and records what the Action Gate decides for each mutation (an illustration with a handful of mutations, not a proof).
             </p>
           </div>
@@ -309,7 +311,7 @@ export const RedTeamRunner: React.FC = () => {
             <select
               value={selectedAdaptiveAttackId}
               onChange={(e) => setSelectedAdaptiveAttackId(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 text-slate-800"
+              className="text-xs bg-subtle border border-line-strong rounded px-2.5 py-1.5 text-fg"
             >
               {attacks.slice(0, 10).map((atk) => (
                 <option key={atk.id} value={atk.id}>
@@ -322,7 +324,7 @@ export const RedTeamRunner: React.FC = () => {
               type="button"
               disabled={loadingAdaptive}
               onClick={handleRunAdaptive}
-              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-warn-solid hover:brightness-110 disabled:bg-warn-solid/10 text-on-solid rounded text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Crosshair className="w-3.5 h-3.5" />
               {loadingAdaptive ? 'Mutating...' : 'Run Adaptive Loop'}
@@ -332,24 +334,24 @@ export const RedTeamRunner: React.FC = () => {
 
         {adaptiveReport ? (
           <div className="space-y-4">
-            <div className="p-3.5 bg-slate-900 text-slate-100 rounded-lg text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="p-3.5 bg-code text-code-fg rounded-lg text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div>
-                <span className="font-semibold text-amber-400 uppercase tracking-wide">
+                <span className="font-semibold text-warn uppercase tracking-wide">
                   Thesis Outcome:{' '}
                 </span>
                 <span>{adaptiveReport.thesisVerification}</span>
               </div>
-              <div className="font-mono text-2xs text-slate-300 shrink-0">
+              <div className="font-mono text-2xs text-fg2 shrink-0">
                 Queries to Detector Bypass:{' '}
-                <span className="font-bold text-amber-300">
+                <span className="font-bold text-warn">
                   {adaptiveReport.queriesToDetectorBypass ? `Attempt #${adaptiveReport.queriesToDetectorBypass}` : 'None (All Caught)'}
                 </span>
               </div>
             </div>
 
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="border border-line rounded-lg overflow-hidden">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
+                <thead className="bg-subtle border-b border-line text-fg2 font-semibold">
                   <tr>
                     <th className="py-2 px-3">Attempt #</th>
                     <th className="py-2 px-3">Mutation Strategy</th>
@@ -358,25 +360,25 @@ export const RedTeamRunner: React.FC = () => {
                     <th className="py-2 px-3">Action Gate Boundary</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-mono text-2xs">
+                <tbody className="divide-y divide-line font-mono text-2xs">
                   {adaptiveReport.attempts.map((att: any) => (
-                    <tr key={att.attempt} className="hover:bg-slate-50/50">
-                      <td className="py-2 px-3 font-bold text-slate-800">#{att.attempt}</td>
-                      <td className="py-2 px-3 font-semibold text-slate-700 font-sans">{att.mutationType}</td>
-                      <td className="py-2 px-3 text-slate-600 truncate max-w-xs">{att.mutatedPrompt}</td>
+                    <tr key={att.attempt} className="hover:bg-subtle/50">
+                      <td className="py-2 px-3 font-bold text-fg">#{att.attempt}</td>
+                      <td className="py-2 px-3 font-semibold text-fg2 font-sans">{att.mutationType}</td>
+                      <td className="py-2 px-3 text-fg2 truncate max-w-xs">{att.mutatedPrompt}</td>
                       <td className="py-2 px-3">
                         {att.detectorBypassed ? (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold">
+                          <span className="px-1.5 py-0.5 rounded bg-warn-solid/10 text-warn font-bold">
                             BYPASSED (Score: {att.detectorScore})
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                          <span className="px-1.5 py-0.5 rounded bg-raised text-fg2">
                             CAUGHT (Score: {att.detectorScore})
                           </span>
                         )}
                       </td>
                       <td className="py-2 px-3">
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold">
+                        <span className="px-1.5 py-0.5 rounded bg-ok-solid/10 text-ok font-bold">
                           GATE BLOCKED ({att.actionGateDecision.toUpperCase()})
                         </span>
                       </td>
@@ -387,28 +389,28 @@ export const RedTeamRunner: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-md text-center text-xs text-slate-500">
+          <div className="p-4 bg-subtle border border-line rounded-md text-center text-xs text-muted">
             Select an attack above and run the adaptive loop to simulate automated detector evasion.
           </div>
         )}
       </div>
 
       {/* Synthetic Attack Library View */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-600" />
+      <div className="bg-surface border border-line rounded-lg p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-3 mb-4">
+          <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+            <Layers className="w-4 h-4 text-accent" />
             Attack Library Catalog ({filteredAttacks.length} Vectors)
           </h3>
 
           <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted" />
             <input
               type="text"
               placeholder="Search attacks..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full text-xs pl-8 pr-3 py-1.5 bg-subtle border border-line-strong rounded-md text-fg focus:outline-none focus:ring-1 focus:ring-accent-solid/40"
             />
           </div>
         </div>
@@ -422,8 +424,8 @@ export const RedTeamRunner: React.FC = () => {
               onClick={() => setActiveCategory(cat)}
               className={`px-2.5 py-1 rounded text-2xs font-medium transition-colors ${
                 activeCategory === cat
-                  ? 'bg-indigo-600 text-white font-semibold shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-accent-solid text-on-solid font-semibold shadow-xs'
+                  : 'bg-subtle text-fg2 hover:bg-raised'
               }`}
             >
               {cat.replace(/_/g, ' ')}
@@ -433,24 +435,24 @@ export const RedTeamRunner: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filteredAttacks.map((atk) => (
-            <div key={atk.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between">
+            <div key={atk.id} className="p-3.5 bg-subtle border border-line rounded-lg flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between text-2xs mb-1">
-                  <span className="font-mono font-bold text-indigo-700">{atk.id}</span>
-                  <span className="px-1.5 py-0.2 rounded bg-slate-200 text-slate-800 text-3xs font-semibold">
+                  <span className="font-mono font-bold text-accent">{atk.id}</span>
+                  <span className="px-1.5 py-0.2 rounded bg-raised text-fg text-3xs font-semibold">
                     {atk.category}
                   </span>
                 </div>
-                <h4 className="text-xs font-bold text-slate-900 mb-1">{atk.name}</h4>
-                <p className="text-xs text-slate-600 mb-2 leading-relaxed">{atk.description}</p>
-                <div className="p-2 bg-white rounded border border-slate-200 text-2xs font-mono text-slate-700 max-h-24 overflow-y-auto mb-2">
+                <h4 className="text-xs font-bold text-fg mb-1">{atk.name}</h4>
+                <p className="text-xs text-fg2 mb-2 leading-relaxed">{atk.description}</p>
+                <div className="p-2 bg-surface rounded border border-line text-2xs font-mono text-fg2 max-h-24 overflow-y-auto mb-2">
                   {atk.prompt}
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-200/80 text-3xs font-mono text-slate-500 flex items-center justify-between">
-                <span>Target Tool: <code className="text-indigo-600 font-bold">{atk.targetToolCall.tool}()</code></span>
-                <span className={atk.isHarmful ? 'text-rose-600 font-semibold' : 'text-emerald-600 font-semibold'}>
+              <div className="pt-2 border-t border-line text-3xs font-mono text-muted flex items-center justify-between">
+                <span>Target Tool: <code className="text-accent font-bold">{atk.targetToolCall.tool}()</code></span>
+                <span className={atk.isHarmful ? 'text-danger font-semibold' : 'text-ok font-semibold'}>
                   {atk.isHarmful ? 'Harmful' : 'Benign Control'}
                 </span>
               </div>
@@ -461,14 +463,14 @@ export const RedTeamRunner: React.FC = () => {
 
       {/* HTML Report Modal */}
       {htmlModalContent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <h4 className="text-sm font-bold text-slate-900">Printable Security Assessment Report</h4>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div ref={htmlModalRef} role="dialog" aria-modal="true" aria-label="Printable security assessment report" tabIndex={-1} className="bg-surface rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-line flex items-center justify-between bg-subtle">
+              <h4 className="text-sm font-bold text-fg">Printable Security Assessment Report</h4>
               <button
                 type="button"
                 onClick={() => setHtmlModalContent(null)}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+                className="text-xs font-semibold text-muted hover:text-fg"
               >
                 Close
               </button>
