@@ -18,6 +18,14 @@ import { getGeminiStatus } from './gemini.ts';
 import { LEGACY_LABEL } from './legacyStandingKeyDemo.ts';
 import type { AppConfig } from './config.ts';
 import * as S from './apiSchemas.ts';
+import { registerGatewayRoutes } from './gatewayRoutes.ts';
+import { eventLedger } from './ledger.ts';
+import { executionService } from './services.ts';
+import { credentialBroker, tokenVerifier, MAX_TOKEN_TTL_SECONDS } from './credentialBroker.ts';
+import { vault } from './vault.ts';
+import { auditToCsv, auditToJsonl, filterAuditEntries } from './auditLog.ts';
+import { aggregateTokens, buildInventory, queryCredentialLedger, scanForExposure, tokenDetail } from './credentialViews.ts';
+import { buildEvidenceBundle } from './evidence.ts';
 import { errorHandler, MUTATING_METHODS, requestId, requireAdmin, requireDemoMode, startHeartbeat, validateBody } from './http.ts';
 
 export function createApp(cfg: AppConfig) {
@@ -326,6 +334,119 @@ export function createApp(cfg: AppConfig) {
   app.post('/api/mcp/reset', admin, body(S.EmptyBody), (_req, res) => {
     mcpVettingEngine.resetMcpRegistry();
     res.json({ success: true, tools: mcpVettingEngine.getTools() });
+  });
+
+  // --- Gateway (agents / apps): /v1/chat/completions, /v1/tools/execute, /v1/approvals/:id ---
+  registerGatewayRoutes(app, cfg);
+
+  // --- Logs: search, filters, pagination, per-entry proofs, export ---
+  const parseQuery = <T extends { safeParse: (v: unknown) => any }>(schema: T, req: Request, res: Response) => {
+    const p = schema.safeParse(req.query);
+    if (!p.success) {
+      res.status(400).json({ error: `Invalid query: ${p.error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`).join('; ')}` });
+      return null;
+    }
+    return p.data as any;
+  };
+  app.get('/api/audit/entries', (req, res) => {
+    const q = parseQuery(S.AuditQueryParams, req, res);
+    if (!q) return;
+    res.json({ ...auditLog.query(q), verification: auditLog.verifyChain() });
+  });
+  app.get('/api/audit/entries/:seq/proof', (req, res) => {
+    const seq = Number(req.params.seq);
+    if (!Number.isInteger(seq) || seq < 0) {
+      res.status(400).json({ error: 'Invalid seq' });
+      return;
+    }
+    const proof = auditLog.proveEntry(seq);
+    if (!proof) {
+      res.status(404).json({ error: 'Entry not found' });
+      return;
+    }
+    res.json({ proof });
+  });
+  app.get('/api/audit/export', (req, res) => {
+    const q = parseQuery(S.AuditQueryParams, req, res);
+    if (!q) return;
+    const items = filterAuditEntries(auditLog.getEntries(), q).slice(0, 10000);
+    if (q.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="armora-audit.csv"');
+      res.send(auditToCsv(items));
+    } else {
+      res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="armora-audit.jsonl"');
+      res.send(auditToJsonl(items));
+    }
+  });
+  app.get('/api/ledger/events', (req, res) => {
+    const q = parseQuery(S.LedgerQueryParams, req, res);
+    if (!q) return;
+    res.json(eventLedger.query(q));
+  });
+  app.get('/api/ledger/verify', (_req, res) => {
+    res.json({ ledger: eventLedger.verify(), audit: auditLog.verifyChain() });
+  });
+
+  // --- Evidence bundle (JSON) for one session ---
+  app.get('/api/response/evidence/:id', (req, res) => {
+    const id = idParam(req, res);
+    if (!id) return;
+    const bundle = buildEvidenceBundle(
+      { ledger: eventLedger, audit: auditLog, outbox: protectedToolServer.getOutbox(), refunds: protectedToolServer.getRefunds(), incident: agentRunner.getIncident(id) ?? null },
+      id
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="armora-evidence-${id}.json"`);
+    res.json(bundle);
+  });
+
+  // --- Credentials: ledger, inventory, TTL, key rotation ---
+  app.get('/api/credentials/ledger', (req, res) => {
+    const q = parseQuery(S.CredentialQueryParams, req, res);
+    if (!q) return;
+    credentialBroker.sweepExpired();
+    res.json(queryCredentialLedger(eventLedger.all(), q));
+  });
+  app.get('/api/credentials/ledger/:jti', (req, res) => {
+    const jti = idParam({ ...req, params: { id: req.params.jti } } as unknown as Request, res);
+    if (!jti) return;
+    const d = tokenDetail(eventLedger.all(), jti);
+    if (!d) {
+      res.status(404).json({ error: 'Token not found' });
+      return;
+    }
+    res.json(d);
+  });
+  app.get('/api/credentials/inventory', (_req, res) => {
+    credentialBroker.sweepExpired();
+    const apps = agentRunner.getApps();
+    const agents = SEEDED_SCENARIOS.map((sc) => ({ agentId: `agent_${sc.id}`, appName: sc.appName, allowedTools: apps.find((a) => a.id === sc.appId)?.allowedTools ?? [] }));
+    agents.push({ agentId: 'agent_gateway_default', appName: 'Gateway (default agent)', allowedTools: Object.keys(TOOL_TAXONOMY) });
+    const exposure = scanForExposure(vault, {
+      incidents: agentRunner.getAllIncidents(),
+      ledgerEvents: eventLedger.all(),
+      auditEntries: auditLog.getEntries(),
+      outbox: protectedToolServer.getOutbox(),
+      refunds: protectedToolServer.getRefunds(),
+    });
+    res.json({
+      ...buildInventory({ events: eventLedger.all(), agents, isQuarantined: (id) => incidentResponseEngine.isAgentQuarantined(id), exposure, vaultStatus: vault.status(), legacyLabel: LEGACY_LABEL }),
+      broker: { kid: credentialBroker.kid, ttlSeconds: credentialBroker.getTtlSeconds(), maxTtlSeconds: MAX_TOKEN_TTL_SECONDS, process: 'single process (broker, vault and tool server share it in this prototype)' },
+    });
+  });
+  app.get('/api/credentials/config', (_req, res) => {
+    res.json({ kid: credentialBroker.kid, ttlSeconds: credentialBroker.getTtlSeconds(), maxTtlSeconds: MAX_TOKEN_TTL_SECONDS, outstanding: credentialBroker.outstandingCount() });
+  });
+  app.post('/api/credentials/ttl', admin, body(S.TtlBody), (req, res) => {
+    const previous = credentialBroker.getTtlSeconds();
+    const ttl = credentialBroker.setTtl(req.body.ttlSeconds);
+    eventLedger.record({ sessionId: 'credential_admin', type: 'TTL_CHANGED', action: 'ttl_changed', data: { previous, ttlSeconds: ttl } });
+    res.json({ ttlSeconds: ttl, maxTtlSeconds: MAX_TOKEN_TTL_SECONDS, note: 'Applies to newly issued tokens only.' });
+  });
+  app.post('/api/credentials/rotate', admin, body(S.EmptyBody), (_req, res) => {
+    const r = credentialBroker.rotateKey();
+    res.json({ ...r, note: 'The previous public key stays valid for at most one token TTL, then is retired.' });
   });
 
   // 16. JSON 404 for unknown API routes

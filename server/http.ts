@@ -56,6 +56,26 @@ export function requireAdmin(cfg: Pick<AppConfig, 'production' | 'adminToken'>) 
   };
 }
 
+/**
+ * Gateway clients authenticate with ARMORA_GATEWAY_KEY (Bearer). Optional locally so curl just works;
+ * in production a missing key closes the gateway (503) instead of leaving it open.
+ */
+export function requireGatewayKey(cfg: Pick<AppConfig, 'production' | 'gatewayKey'>) {
+  return (req: ReqLike, res: ResLike, next: Next): void => {
+    if (!cfg.gatewayKey) {
+      if (!cfg.production) return next();
+      res.status(503).json({ error: { message: 'ARMORA_GATEWAY_KEY is not configured; the gateway is disabled in production', type: 'server_error' } });
+      return;
+    }
+    const supplied = headerValue(req, 'authorization')?.replace(/^Bearer\s+/i, '');
+    if (!supplied || !safeEqual(supplied, cfg.gatewayKey)) {
+      res.status(401).json({ error: { message: 'Invalid or missing gateway key', type: 'authentication_error' } });
+      return;
+    }
+    next();
+  };
+}
+
 /** Route is available only when DEMO_MODE=true. */
 export function requireDemoMode(cfg: Pick<AppConfig, 'demoMode'>) {
   return (req: ReqLike, res: ResLike, next: Next): void => {

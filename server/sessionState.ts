@@ -17,7 +17,7 @@ export function createSessionState(sessionId: string, segments: Segment[] = []):
   };
 }
 
-function collectDataObjects(data: unknown): string[] {
+export function collectDataObjects(data: unknown): string[] {
   const ids: string[] = [];
   const visit = (v: unknown): void => {
     if (!v || typeof v !== 'object') return;

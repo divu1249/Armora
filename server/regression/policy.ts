@@ -1,4 +1,4 @@
-import { PolicyEngine, DEFAULT_POLICY_YAML, SEEDED_POLICY_VERSIONS, parsePolicyYaml } from '../policyEngine.ts';
+import { PolicyEngine, DEFAULT_POLICY_YAML, SEEDED_POLICY_VERSIONS, parsePolicyYaml, KNOWN_RULE_IDS } from '../policyEngine.ts';
 import { createSessionState } from '../sessionState.ts';
 import type { ToolCall } from '../types.ts';
 import { eq, suite, TRUSTED, UNTRUSTED, yes } from './helpers.ts';
@@ -99,7 +99,7 @@ export const policyCases = suite(1, 'Regression 1: Policy engine', [
   ['rules not listed in the policy are not enforced and setPolicyYaml warns about them', () => {
     const pe = new PolicyEngine();
     const r = pe.setPolicyYaml(policy(rule('R1', true)));
-    return yes(r.success && (r.warnings?.length ?? 0) === 5, JSON.stringify(r.warnings));
+    return yes(r.success && (r.warnings?.length ?? 0) === KNOWN_RULE_IDS.length - 1, JSON.stringify(r.warnings));
   }],
   ['evaluation error FAILS CLOSED: deny / POLICY_ERROR, never throws, never allows', () => {
     const pe = new PolicyEngine();

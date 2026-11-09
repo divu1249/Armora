@@ -2,6 +2,8 @@ export interface AppConfig {
   production: boolean;
   demoMode: boolean;
   adminToken?: string;
+  /** Bearer key required on /v1/* (mandatory in production) */
+  gatewayKey?: string;
   appUrl?: string;
 }
 
@@ -19,5 +21,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       console.warn(`[config] APP_URL "${env.APP_URL}" is not a valid URL; CORS will allow same-origin only.`);
     }
   }
-  return { production, demoMode, adminToken: env.ADMIN_TOKEN || undefined, appUrl };
+  return { production, demoMode, adminToken: env.ADMIN_TOKEN || undefined, gatewayKey: env.ARMORA_GATEWAY_KEY || undefined, appUrl };
 }

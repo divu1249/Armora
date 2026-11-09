@@ -105,7 +105,7 @@ export interface ScopedTokenClaims {
 export interface AuditEntry {
   seq: number;
   ts: string;
-  type: 'POLICY_DECISION' | 'TOKEN_ISSUED' | 'TOOL_INVOCATION' | 'APPROVAL_DECISION' | 'TAMPER_DEMO';
+  type: 'POLICY_DECISION' | 'TOKEN_ISSUED' | 'TOOL_INVOCATION' | 'APPROVAL_DECISION' | 'TAMPER_DEMO' | 'LEDGER_EVENT';
   sessionId: string;
   data: {
     ruleId?: string;
@@ -144,6 +144,9 @@ export interface ApprovalItem {
   expiresAt: number;
   scenarioId: string;
   agentId?: string;
+  callId?: string;
+  /** set once the approval is resolved (APPROVED executes, DENIED/EXPIRED does not) */
+  result?: ToolResult;
   toolCall: ToolCall;
   argsHash?: string;
   riskLevel: RiskLevel;
@@ -170,6 +173,18 @@ export interface WithoutFirewallOutcome {
   financialLoss?: string;
 }
 
+export interface StepRecord {
+  index: number;
+  kind: 'tool' | 'summarize' | 'respond' | 'agent';
+  label: string;
+  tool?: string;
+  callId?: string;
+  status: 'executed' | 'failed' | 'blocked' | 'pending_approval' | 'inspected' | 'skipped';
+  decision?: { action: GateAction; ruleId: string };
+  /** summary text produced by the (simulated) agent, after output inspection */
+  text?: string;
+}
+
 export interface Incident {
   id: string;
   timestamp: string;
@@ -193,6 +208,13 @@ export interface Incident {
   latency: LatencyBreakdown;
   notices: string[];
   withoutFirewallOutcome?: WithoutFirewallOutcome;
+  /** ordered steps of the scenario sequence */
+  steps?: StepRecord[];
+  /** argument provenance of the final (agent) tool call; offsets point into `segments` */
+  argProvenance?: import('./provenance.ts').ArgProvenance;
+  /** output inspection (before/after) of model text and outbound bodies */
+  outputInspections?: Array<{ source: 'model_output' | 'summary' | 'email_body'; inspection: import('./outputInspection.ts').OutputInspection }>;
+  honestyNote?: string;
 }
 
 export interface OrgApp {

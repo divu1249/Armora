@@ -38,6 +38,8 @@ import { AppsPage } from './components/pages/AppsPage.tsx';
 import { PoliciesPage } from './components/pages/PoliciesPage.tsx';
 import { ApprovalsPage } from './components/pages/ApprovalsPage.tsx';
 import { AuditPage } from './components/pages/AuditPage.tsx';
+import { CredentialsPage } from './components/pages/CredentialsPage.tsx';
+import { DocsPage } from './components/pages/DocsPage.tsx';
 import { CompliancePage } from './components/pages/CompliancePage.tsx';
 import { SettingsPage } from './components/pages/SettingsPage.tsx';
 import { SelfTestRunner } from './components/SelfTestRunner.tsx';
@@ -80,6 +82,8 @@ type PageRoute =
   | 'policies'
   | 'approvals'
   | 'audit'
+  | 'credentials'
+  | 'docs'
   | 'compliance'
   | 'settings'
   | 'selftest';
@@ -121,12 +125,14 @@ export default function App() {
       apps: 'Apps & Agent Inventory',
       policies: 'Action Gate Policies',
       approvals: 'Approval Queue',
-      audit: 'Cryptographic Audit Log',
+      audit: 'Logs & Audit Chain',
+      credentials: 'Credentials (no standing credentials)',
+      docs: 'Gateway Docs',
       compliance: 'OWASP Top 10 Compliance',
       settings: 'Tenant Settings',
       selftest: 'Self-Test Suite',
     };
-    document.title = `LLM Firewall | ${titleMap[currentPage] || 'Security Gateway'}`;
+    document.title = `Armora | ${titleMap[currentPage] || 'Security Gateway'}`;
   }, [currentPage]);
 
   // Two-stroke Keyboard Shortcuts (e.g. 'g' then 'o', 'g' then 's', '?', 'Esc')
@@ -685,9 +691,41 @@ export default function App() {
             >
               <div className="flex items-center gap-2.5">
                 <Link2 className={`w-4 h-4 ${currentPage === 'audit' ? 'text-[#00f5a0]' : 'text-[#8293aa]'}`} />
-                <span>Audit Hash Chain</span>
+                <span>Logs &amp; Audit Chain</span>
               </div>
-              <span className="text-3xs font-mono text-[#00f5a0]">SHA-256</span>
+              <span className="text-3xs font-mono text-[#00f5a0]">HMAC</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setCurrentPage('credentials'); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded transition-all duration-150 ${
+                currentPage === 'credentials'
+                  ? 'bg-[#00e5ff]/10 text-[#00e5ff] font-bold border-l-2 border-[#00e5ff] shadow-[0_0_15px_rgba(0,229,255,0.15)]'
+                  : 'text-[#8293aa] hover:text-white hover:bg-[#141f33]/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Shield className={`w-4 h-4 ${currentPage === 'credentials' ? 'text-[#00f5a0]' : 'text-[#8293aa]'}`} />
+                <span>Credentials</span>
+              </div>
+              <span className="text-3xs font-mono text-[#00f5a0]">0 standing</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setCurrentPage('docs'); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded transition-all duration-150 ${
+                currentPage === 'docs'
+                  ? 'bg-[#00e5ff]/10 text-[#00e5ff] font-bold border-l-2 border-[#00e5ff] shadow-[0_0_15px_rgba(0,229,255,0.15)]'
+                  : 'text-[#8293aa] hover:text-white hover:bg-[#141f33]/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <FileSearch className={`w-4 h-4 ${currentPage === 'docs' ? 'text-[#00f5a0]' : 'text-[#8293aa]'}`} />
+                <span>Gateway Docs</span>
+              </div>
+              <span className="text-3xs font-mono text-[#a855f7]">curl</span>
             </button>
 
             <button
@@ -836,6 +874,8 @@ export default function App() {
             )}
 
             {currentPage === 'audit' && <AuditPage />}
+            {currentPage === 'credentials' && <CredentialsPage />}
+            {currentPage === 'docs' && <DocsPage />}
 
             {currentPage === 'compliance' && <CompliancePage />}
 

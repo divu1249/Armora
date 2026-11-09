@@ -1,19 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import {
-  FileText,
-  AlertOctagon,
-  ShieldAlert,
-  ShieldCheck,
-  Play,
-  Pause,
-  RotateCcw,
-  SkipForward,
-  CheckCircle2,
-  Copy,
-  Info,
-  Radio,
-  Clock,
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FileText, AlertOctagon, Play, Pause, RotateCcw, SkipForward, Copy, Info, Radio, Clock, Download } from 'lucide-react';
 import {
   fetchBlastRadiusGraph,
   fetchKillSwitchState,
@@ -21,7 +7,21 @@ import {
   fetchReportDrafts,
   fetchTimeline,
   fetchIncidents,
+  downloadEvidenceBundle,
 } from '../services/api.ts';
+
+const STATUS_COLOR: Record<string, { fill: string; stroke: string; text: string }> = {
+  allowed: { fill: '#fef2f2', stroke: '#e11d48', text: '#9f1239' },
+  blocked: { fill: '#ecfdf5', stroke: '#10b981', text: '#065f46' },
+  pending: { fill: '#fffbeb', stroke: '#f59e0b', text: '#92400e' },
+  revoked: { fill: '#f5f3ff', stroke: '#8b5cf6', text: '#5b21b6' },
+  expired: { fill: '#f1f5f9', stroke: '#94a3b8', text: '#475569' },
+  rejected: { fill: '#ecfdf5', stroke: '#10b981', text: '#065f46' },
+  info: { fill: '#ffffff', stroke: '#cbd5e1', text: '#334155' },
+};
+const EDGE_COLOR: Record<string, string> = { allowed: '#e11d48', blocked: '#10b981', pending: '#f59e0b', revoked: '#8b5cf6' };
+const COLUMN: Record<string, number> = { untrusted_source: 0, session: 1, tool_call: 2, data_object: 3, token: 3, outbound_destination: 4 };
+const COLUMN_TITLE = ['Untrusted sources', 'Session', 'Tool calls', 'Data touched / tokens', 'Destinations'];
 
 export const IncidentResponse: React.FC = () => {
   const [incidents, setIncidents] = useState<any[]>([]);
@@ -82,22 +82,31 @@ export const IncidentResponse: React.FC = () => {
     }
   };
 
-  // Replay animation interval
+  // Replay uses the REAL event timestamps: the wait before step N+1 is the recorded gap (sped up, clamped)
+  const [speed, setSpeed] = useState<number>(4);
   useEffect(() => {
-    let interval: any = null;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        setCurrentStep((prev) => {
-          if (prev >= timeline.length) {
-            setIsPlaying(false);
-            return timeline.length;
-          }
-          return prev + 1;
-        });
-      }, 1500);
+    if (!isPlaying) return;
+    if (currentStep >= timeline.length) {
+      setIsPlaying(false);
+      return;
     }
-    return () => clearInterval(interval);
-  }, [isPlaying, timeline.length]);
+    const gap = (timeline[currentStep]?.timeOffsetMs ?? 0) - (timeline[currentStep - 1]?.timeOffsetMs ?? 0);
+    const wait = Math.min(2000, Math.max(250, gap / speed));
+    const t = setTimeout(() => setCurrentStep((p) => Math.min(timeline.length, p + 1)), wait);
+    return () => clearTimeout(t);
+  }, [isPlaying, currentStep, timeline, speed]);
+
+  // Layered layout computed from the real nodes
+  const layout = useMemo(() => {
+    const nodes: any[] = graph?.nodes ?? [];
+    const cols: any[][] = [[], [], [], [], []];
+    for (const n of nodes) cols[COLUMN[n.type] ?? 3].push(n);
+    const pos = new Map<string, { x: number; y: number }>();
+    cols.forEach((col, ci) => col.forEach((n, i) => pos.set(n.id, { x: 20 + ci * 190, y: 34 + i * 50 })));
+    const rows = Math.max(1, ...cols.map((c) => c.length));
+    return { pos, height: 50 + rows * 50 };
+  }, [graph]);
+  const [selectedNode, setSelectedNode] = useState<any | null>(null);
 
   const handleToggleKillSwitch = async (agentId: string, currentQuarantined: boolean) => {
     try {
@@ -113,7 +122,8 @@ export const IncidentResponse: React.FC = () => {
     }
   };
 
-  const currentAgentId = graph?.nodes?.find((n: any) => n.type === 'agent')?.id || 'agent_s1_hr_resume_exfil';
+  const selectedIncident = incidents.find((i) => i.id === selectedIncidentId);
+  const currentAgentId = selectedIncident ? `agent_${selectedIncident.scenarioId}` : 'agent_s1_hr_resume_exfil';
   const isAgentQuarantined = killSwitch?.quarantinedAgents?.includes(currentAgentId) || false;
 
   const handleCopyDraft = (text: string) => {
@@ -193,7 +203,7 @@ export const IncidentResponse: React.FC = () => {
                 </span>
               </div>
               <p className="text-2xs text-slate-600 mt-0.5">
-                Quarantining revokes all short-lived broker keys immediately and blocks subsequent execution attempts at the Action Gate.
+                Quarantining revokes every outstanding broker token of the agent (each revocation is logged) and blocks subsequent execution attempts at the Action Gate.
               </p>
             </div>
           </div>
@@ -212,124 +222,106 @@ export const IncidentResponse: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Interactive SVG Blast-Radius Graph */}
+      {/* 2. Blast radius computed from the real event ledger */}
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
-        <div className="border-b border-slate-200 pb-3 mb-4">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Radio className="w-4 h-4 text-indigo-600" />
-            Incident Blast-Radius Graph
-            <span className="text-2xs font-mono text-slate-500 font-normal">
-              [BUILT: Vector Containment Map]
-            </span>
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Traces the propagation path from prompt injection ingress to internal sensitive databases and external egress channels.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 mb-4">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Radio className="w-4 h-4 text-indigo-600" />
+              Blast Radius (computed from the event ledger)
+              <span className="text-2xs font-mono text-slate-500 font-normal">[BUILT: nodes exist only if an event created them]</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Red = something really happened (data read / sent). Green = blocked. Amber = held for approval. Purple = revoked token. Grey = expired.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={!selectedIncidentId}
+            onClick={() => downloadEvidenceBundle(selectedIncidentId).catch(console.error)}
+            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white rounded text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download evidence bundle (JSON)
+          </button>
         </div>
 
-        {graph ? (
+        {graph?.note && <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded text-xs">{graph.note}</div>}
+
+        {graph && graph.nodes.length > 0 ? (
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg overflow-x-auto">
-            <svg className="w-full min-w-[650px] h-52" viewBox="0 0 700 180">
-              <defs>
-                <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
-                </marker>
-                <marker id="arrow-blocked" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#e11d48" />
-                </marker>
-              </defs>
-
-              {/* Connecting Edges */}
-              {/* Edge 1: Session -> Agent */}
-              <line x1="120" y1="90" x2="220" y2="90" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#arrow)" />
-              {/* Edge 2: Agent -> Tool */}
-              <line x1="330" y1="90" x2="410" y2="90" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#arrow)" />
-              {/* Edge 3: Tool -> Data Object (Upward) */}
-              <path d="M 460 70 L 460 45 L 530 45" fill="none" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#arrow)" />
-              {/* Edge 4: Tool -> Outbound Sink (Downward) */}
-              <path
-                d="M 460 110 L 460 135 L 530 135"
-                fill="none"
-                stroke={graph.nodes.find((n: any) => n.id === 'dest_external')?.status === 'compromised' ? '#e11d48' : '#10b981'}
-                strokeWidth="2"
-                strokeDasharray={graph.nodes.find((n: any) => n.id === 'dest_external')?.status === 'compromised' ? 'none' : '3 3'}
-                markerEnd={graph.nodes.find((n: any) => n.id === 'dest_external')?.status === 'compromised' ? 'url(#arrow-blocked)' : 'url(#arrow)'}
-              />
-
-              {/* Node 1: Session */}
-              <g transform="translate(20, 65)">
-                <rect width="100" height="50" rx="6" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1.5" />
-                <text x="50" y="24" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#0f172a">Ingress Session</text>
-                <text x="50" y="38" textAnchor="middle" fontSize="9" fontFamily="monospace" fill="#64748b">Tainted Input</text>
-              </g>
-
-              {/* Node 2: Agent */}
-              <g transform="translate(220, 65)">
-                <rect
-                  width="110"
-                  height="50"
-                  rx="6"
-                  fill="#ffffff"
-                  stroke={isAgentQuarantined ? '#e11d48' : '#6366f1'}
-                  strokeWidth="2"
-                />
-                <text x="55" y="24" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#0f172a">AI Agent</text>
-                <text x="55" y="38" textAnchor="middle" fontSize="8" fontFamily="monospace" fill={isAgentQuarantined ? '#e11d48' : '#6366f1'}>
-                  {isAgentQuarantined ? 'QUARANTINED' : 'ACTIVE'}
-                </text>
-              </g>
-
-              {/* Node 3: Proposed Tool */}
-              <g transform="translate(410, 65)">
-                <rect width="100" height="50" rx="6" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1.5" />
-                <text x="50" y="24" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#0f172a">Action Gate</text>
-                <text x="50" y="38" textAnchor="middle" fontSize="8" fontFamily="monospace" fill="#4338ca">Tool Boundary</text>
-              </g>
-
-              {/* Node 4: Private Data Object */}
-              <g transform="translate(530, 20)">
-                <rect width="150" height="46" rx="6" fill="#f8fafc" stroke="#94a3b8" strokeWidth="1.5" />
-                <text x="75" y="22" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#0f172a">Candidate Database</text>
-                <text x="75" y="36" textAnchor="middle" fontSize="8" fontFamily="monospace" fill="#059669">Internal Perimeter</text>
-              </g>
-
-              {/* Node 5: Outbound Destination */}
-              <g transform="translate(530, 110)">
-                {(() => {
-                  const destNode = graph.nodes.find((n: any) => n.id === 'dest_external');
-                  const isCompromised = destNode?.status === 'compromised';
-                  return (
-                    <>
-                      <rect
-                        width="150"
-                        height="46"
-                        rx="6"
-                        fill={isCompromised ? '#fef2f2' : '#ecfdf5'}
-                        stroke={isCompromised ? '#e11d48' : '#10b981'}
-                        strokeWidth="2"
-                      />
-                      <text x="75" y="22" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#0f172a">
-                        External Sink
-                      </text>
-                      <text
-                        x="75"
-                        y="36"
-                        textAnchor="middle"
-                        fontSize="8"
-                        fontFamily="monospace"
-                        fontWeight="bold"
-                        fill={isCompromised ? '#e11d48' : '#059669'}
-                      >
-                        {isCompromised ? 'EXFILTRATED' : 'CONTAINED BY GATE'}
-                      </text>
-                    </>
-                  );
-                })()}
-              </g>
+            <svg className="min-w-[980px] w-full" viewBox={`0 0 980 ${layout.height}`} style={{ height: layout.height }}>
+              {COLUMN_TITLE.map((t, i) => (
+                <text key={t} x={20 + i * 190} y={14} fontSize="9" fill="#64748b" fontWeight="bold">{t}</text>
+              ))}
+              {graph.edges.map((e: any) => {
+                const a = layout.pos.get(e.source);
+                const b = layout.pos.get(e.target);
+                if (!a || !b) return null;
+                return (
+                  <g key={e.id}>
+                    <line x1={a.x + 150} y1={a.y + 17} x2={b.x} y2={b.y + 17} stroke={EDGE_COLOR[e.status] ?? '#94a3b8'} strokeWidth="1.5" strokeDasharray={e.status === 'blocked' ? '4 3' : 'none'} />
+                    <text x={(a.x + 150 + b.x) / 2} y={(a.y + b.y) / 2 + 14} fontSize="7" textAnchor="middle" fill="#475569">{e.label}</text>
+                  </g>
+                );
+              })}
+              {graph.nodes.map((n: any) => {
+                const p = layout.pos.get(n.id)!;
+                const c = STATUS_COLOR[n.status] ?? STATUS_COLOR.info;
+                return (
+                  <g key={n.id} transform={`translate(${p.x}, ${p.y})`} onClick={() => setSelectedNode(n)} style={{ cursor: 'pointer' }}>
+                    <rect width="150" height="34" rx="5" fill={c.fill} stroke={c.stroke} strokeWidth="1.5" />
+                    <text x="75" y="14" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#0f172a">{String(n.label).slice(0, 26)}</text>
+                    <text x="75" y="26" textAnchor="middle" fontSize="7.5" fontFamily="monospace" fill={c.text}>{n.type.replace('_', ' ')} · {n.status}</text>
+                  </g>
+                );
+              })}
             </svg>
           </div>
         ) : (
-          <div className="text-xs text-slate-500 py-6 text-center">No graph data.</div>
+          <div className="text-xs text-slate-500 py-6 text-center">No ledger events for this incident.</div>
+        )}
+
+        {selectedNode && (
+          <pre className="mt-3 p-3 bg-slate-900 text-slate-100 rounded text-3xs overflow-x-auto max-h-48">{JSON.stringify(selectedNode, null, 2)}</pre>
+        )}
+
+        {graph && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div className="p-3 border border-rose-200 bg-rose-50 rounded-lg text-xs">
+              <div className="font-bold text-rose-900 mb-1">What left the premises</div>
+              {graph.summary.leftPremises.items.length === 0 ? (
+                <div className="text-emerald-800">Nothing, according to the outbox / refund records and the ledger.</div>
+              ) : (
+                <ul className="space-y-1 text-rose-950">
+                  {graph.summary.leftPremises.items.map((i: any) => (
+                    <li key={i.callId} className="font-mono text-2xs">
+                      {i.kind === 'email' ? `email → ${(i.recipients ?? []).join(', ')} · ${i.bytes ?? '?'} bytes` : `refund INR ${i.amount} → ${i.upiId}`}
+                      {' · classes: '}{Object.entries(i.dataClasses).map(([k, v]) => `${k}×${v}`).join(', ') || 'none found'}
+                      {' · source: '}{i.source}{i.simulation ? ` (${i.simulation})` : ''}
+                    </li>
+                  ))}
+                  <li className="text-2xs">Totals: {graph.summary.leftPremises.recipients.length} recipient(s), {graph.summary.leftPremises.totalBytes} bytes, {graph.summary.leftPremises.recordsReferenced} record id(s) in bodies; {graph.summary.leftPremises.recordsTouchedInSession} record(s) read in session.</li>
+                </ul>
+              )}
+            </div>
+            <div className="p-3 border border-emerald-200 bg-emerald-50 rounded-lg text-xs">
+              <div className="font-bold text-emerald-900 mb-1">What was prevented</div>
+              {graph.summary.prevented.items.length === 0 ? (
+                <div className="text-slate-600">No calls were denied or held in this session.</div>
+              ) : (
+                <ul className="space-y-1 text-emerald-950">
+                  {graph.summary.prevented.items.map((i: any) => (
+                    <li key={i.callId} className="font-mono text-2xs">
+                      {i.status === 'pending' ? 'HELD' : 'DENIED'} {i.tool}() {i.ruleId ? `[${i.ruleId}]` : ''} → {(i.recipients ?? []).join(', ') || i.upiId || '-'}
+                      {i.amount ? ` INR ${i.amount}` : ''}
+                      {Object.keys(i.wouldHaveSentClasses).length ? ` · would have sent: ${Object.entries(i.wouldHaveSentClasses).map(([k, v]) => `${k}×${v}`).join(', ')}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -339,13 +331,13 @@ export const IncidentResponse: React.FC = () => {
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Clock className="w-4 h-4 text-indigo-600" />
-              Incident Timeline Replay Engine
+              Event Replay (real timestamps)
               <span className="text-2xs font-mono text-slate-500 font-normal">
-                [BUILT: Step-by-Step State Reconstruction]
+                [BUILT: from ledger event times]
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Step forward and backward through the execution sequence to inspect exactly how the Action Gate contained the attack.
+              Play, pause or step through the recorded events. Gaps between steps are the real gaps between ledger timestamps (sped up).
             </p>
           </div>
 
@@ -369,6 +361,11 @@ export const IncidentResponse: React.FC = () => {
               {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
               {isPlaying ? 'Pause' : 'Play Replay'}
             </button>
+            <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className="text-xs border border-slate-300 rounded px-1.5 py-1.5 bg-white">
+              <option value={1}>1x</option>
+              <option value={4}>4x</option>
+              <option value={16}>16x</option>
+            </select>
             <button
               type="button"
               disabled={currentStep >= timeline.length}
@@ -381,7 +378,7 @@ export const IncidentResponse: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
           {timeline.map((step) => {
             const isReached = currentStep >= step.step;
             const isCurrent = currentStep === step.step;
@@ -398,8 +395,9 @@ export const IncidentResponse: React.FC = () => {
               >
                 <div className="flex items-center justify-between text-2xs mb-1">
                   <span className="font-mono font-bold text-indigo-700">Step {step.step}</span>
-                  <span className="font-mono text-3xs text-slate-400">T+{step.timeOffsetMs}ms</span>
+                  <span className="font-mono text-3xs text-slate-400" title={step.ts}>T+{step.timeOffsetMs}ms</span>
                 </div>
+                <div className="text-3xs font-mono text-slate-400">{step.phase} · {step.status}</div>
                 <div className="text-xs font-bold text-slate-900 mb-1">{step.title}</div>
                 <p className="text-3xs text-slate-600 leading-relaxed">{step.description}</p>
               </div>
@@ -416,11 +414,11 @@ export const IncidentResponse: React.FC = () => {
               <FileText className="w-4 h-4 text-indigo-600" />
               Regulatory Incident Report Generator
               <span className="text-2xs font-mono text-slate-500 font-normal">
-                [BUILT: CERT-In 70B &amp; DPDP 2023 Drafts]
+                [PROTOTYPE: drafts computed from ledger data]
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Automates technical incident intake drafts for compliance review.
+              Drafts are populated from the computed blast radius and events. They assert no legal deadline.
             </p>
           </div>
 
@@ -433,7 +431,7 @@ export const IncidentResponse: React.FC = () => {
                   activeReportTab === 'cert_in' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700'
                 }`}
               >
-                CERT-In (6-Hr Notice)
+                CERT-In draft
               </button>
               <button
                 type="button"
@@ -467,7 +465,7 @@ export const IncidentResponse: React.FC = () => {
         <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md text-xs flex items-start gap-2">
           <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="font-medium">
-            Draft for legal and security review. Not legal advice. Verify deadlines and applicability with counsel.
+            {reportDrafts?.disclaimer ?? 'Draft for legal and security review. Not legal advice. Verify deadlines and applicability with counsel.'}
           </div>
         </div>
 

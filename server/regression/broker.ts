@@ -328,9 +328,15 @@ export const brokerCases = suite(4, 'Regression 4: Credential broker (Ed25519)',
     const b = other.executeTool({ toolCall: call, credential: token, sessionId: 'sessA' }).success;
     return eq([true, true], [a, b], 'documented limitation: replay store is local to one tool-server process');
   }],
-  ['source contract: agentRunner uses the broker for allowed calls and the legacy module only for firewall=off', () => {
-    const src = readSrc('server/agentRunner.ts');
-    if (!src) return skip('source not available');
-    return yes(/legacyStandingKeyDemo\.execute/.test(src) && !/isFirewallOff/.test(src) && !/MASTER_KEY/.test(src));
+  ['source contract: protected tools run only via ExecutionService (broker token) and the legacy module only for firewall=off', () => {
+    const exe = readSrc('server/executionService.ts');
+    const runner = readSrc('server/agentRunner.ts');
+    if (!exe || !runner) return skip('source not available');
+    return yes(
+      /legacy\.execute\(/.test(exe) &&
+        /s\.firewallMode === 'off'/.test(exe) &&
+        !/isFirewallOff|MASTER_KEY/.test(exe + runner) &&
+        !/toolServer\.executeTool|protectedToolServer\.executeTool/.test(runner)
+    );
   }],
 ]);

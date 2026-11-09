@@ -4,9 +4,14 @@ import { tokenVerifier, TokenVerifier, TOKEN_TTL_SECONDS } from './credentialBro
 import { validateToolArgs } from './toolSchemas.ts';
 import { analyzeRecipients } from './emailRecipients.ts';
 import { LEGACY_LABEL } from './legacyStandingKeyDemo.ts';
+import { vault as defaultVault, Vault } from './vault.ts';
 
 export interface OutboxEmail {
   id: string;
+  sessionId?: string;
+  bytes?: number;
+  /** HMAC-derived receipt from the (simulated) provider call; proves the vault secret was used without revealing it */
+  providerReceipt?: string;
   timestamp: string;
   to: string;
   cc?: string[];
@@ -18,6 +23,8 @@ export interface OutboxEmail {
 
 export interface RefundRecord {
   id: string;
+  sessionId?: string;
+  providerReceipt?: string;
   timestamp: string;
   amount: number;
   upiId: string;
@@ -53,7 +60,7 @@ export class ProtectedToolServer {
   private candidates: CandidateRecord[] = [];
   private orders: OrderRecord[] = [];
 
-  constructor(private verifier: TokenVerifier) {
+  constructor(private verifier: TokenVerifier, private vault: Vault = defaultVault) {
     this.seedData();
   }
 
@@ -130,14 +137,14 @@ export class ProtectedToolServer {
     const credentialInfo = `Scoped Broker Token (kid-signed Ed25519, JTI: ${claims.jti.substring(0, 14)}..., TTL: ${TOKEN_TTL_SECONDS}s${
       claims.approvalId ? `, approval: ${claims.approvalId}` : ''
     })`;
-    return this.dispatch(toolCall.tool, v.args, 'scoped_broker_token', credentialInfo);
+    return this.dispatch(toolCall.tool, v.args, 'scoped_broker_token', credentialInfo, sessionId);
   }
 
   /**
    * LEGACY SIMULATION ONLY (firewall = OFF scenario). Called solely by LegacyStandingKeyDemo,
    * which supplies its own key verifier. Never used for real executions.
    */
-  public executeLegacySimulation(toolCall: ToolCall, presentedKey: string, keyVerifier: (k: string) => boolean): ToolResult {
+  public executeLegacySimulation(toolCall: ToolCall, presentedKey: string, keyVerifier: (k: string) => boolean, sessionId?: string): ToolResult {
     const v = validateToolArgs(toolCall.tool, toolCall.args);
     if (!v.ok || !keyVerifier(presentedKey)) {
       return {
@@ -148,7 +155,7 @@ export class ProtectedToolServer {
         simulation: LEGACY_LABEL,
       };
     }
-    const r = this.dispatch(toolCall.tool, v.args, 'standing_master_key', `${LEGACY_LABEL}: standing key (unscoped, no expiry, no argument binding)`);
+    const r = this.dispatch(toolCall.tool, v.args, 'standing_master_key', `${LEGACY_LABEL}: standing key (unscoped, no expiry, no argument binding)`, sessionId);
     return { ...r, simulation: LEGACY_LABEL };
   }
 
@@ -156,7 +163,8 @@ export class ProtectedToolServer {
     tool: string,
     args: Record<string, unknown>,
     executedWith: ToolResult['executedWith'],
-    credentialInfo: string
+    credentialInfo: string,
+    sessionId?: string
   ): ToolResult {
     switch (tool) {
       case 'read_candidate_files': {
@@ -180,6 +188,9 @@ export class ProtectedToolServer {
         const body = String(args.body ?? '');
         const emailRecord: OutboxEmail = {
           id: `outbox_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+          sessionId,
+          bytes: Buffer.byteLength(body, 'utf8'),
+          providerReceipt: this.vault.callProvider('email_provider_api_key', `${toList.join(',')}|${String(args.subject)}`),
           timestamp: new Date().toISOString(),
           to: toList.join(', ') || String(args.to),
           ...(ccList ? { cc: ccList } : {}),
@@ -197,7 +208,8 @@ export class ProtectedToolServer {
             recipient: emailRecord.to,
             cc: ccList,
             bcc: bccList,
-            bytesSent: body.length,
+            bytesSent: emailRecord.bytes,
+            providerReceipt: emailRecord.providerReceipt,
           },
           executedWith,
           credentialInfo,
@@ -232,6 +244,8 @@ export class ProtectedToolServer {
         const amount = args.amount as number;
         const refundRecord: RefundRecord = {
           id: `ref_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+          sessionId,
+          providerReceipt: this.vault.callProvider('payments_api_key', `${String(args.upiId)}|${amount}`),
           timestamp: new Date().toISOString(),
           amount,
           upiId: String(args.upiId),
@@ -246,6 +260,7 @@ export class ProtectedToolServer {
             amountTransferred: amount,
             upiBeneficiary: refundRecord.upiId,
             status: 'PROCESSED_SUCCESSFULLY',
+            providerReceipt: refundRecord.providerReceipt,
           },
           executedWith,
           credentialInfo,

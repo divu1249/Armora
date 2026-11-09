@@ -432,3 +432,90 @@ export async function resetMcpRegistry() {
   if (!res.ok) throw new Error('Failed to reset MCP registry');
   return res.json();
 }
+
+// ---------------------------------------------------------------- logs, evidence, credentials
+
+export type AuditQueryParams = {
+  search?: string;
+  sessionId?: string;
+  ruleId?: string;
+  tool?: string;
+  decision?: string;
+  type?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+const qs = (q: Record<string, unknown>): string => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '' && v !== null) p.set(k, String(v));
+  const s = p.toString();
+  return s ? `?${s}` : '';
+};
+
+export async function fetchAuditEntries(q: AuditQueryParams): Promise<{ items: AuditEntry[]; total: number; page: number; pageSize: number; verification: VerificationReport }> {
+  const res = await apiFetch(`/api/audit/entries${qs(q)}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to fetch audit entries');
+  return res.json();
+}
+
+export async function fetchAuditProof(seq: number): Promise<{ proof: any }> {
+  const res = await apiFetch(`/api/audit/entries/${seq}/proof`);
+  if (!res.ok) throw new Error('Failed to fetch proof');
+  return res.json();
+}
+
+/** Downloads through fetch so the admin token header (if any) is attached. */
+async function downloadBlob(url: string, filename: string): Promise<void> {
+  const res = await apiFetch(url);
+  if (!res.ok) throw new Error('Download failed');
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export function exportAudit(format: 'jsonl' | 'csv', q: AuditQueryParams): Promise<void> {
+  const { page: _p, pageSize: _s, ...rest } = q;
+  return downloadBlob(`/api/audit/export${qs({ ...rest, format })}`, `armora-audit.${format}`);
+}
+
+export function downloadEvidenceBundle(sessionId: string): Promise<void> {
+  return downloadBlob(`/api/response/evidence/${encodeURIComponent(sessionId)}`, `armora-evidence-${sessionId}.json`);
+}
+
+export async function fetchCredentialLedger(q: Record<string, unknown>): Promise<any> {
+  const res = await apiFetch(`/api/credentials/ledger${qs(q)}`);
+  if (!res.ok) throw new Error('Failed to fetch credential ledger');
+  return res.json();
+}
+
+export async function fetchCredentialDetail(jti: string): Promise<any> {
+  const res = await apiFetch(`/api/credentials/ledger/${encodeURIComponent(jti)}`);
+  if (!res.ok) throw new Error('Token not found');
+  return res.json();
+}
+
+export async function fetchCredentialInventory(): Promise<any> {
+  const res = await apiFetch('/api/credentials/inventory');
+  if (!res.ok) throw new Error('Failed to fetch inventory');
+  return res.json();
+}
+
+export async function setTokenTtl(ttlSeconds: number): Promise<{ ttlSeconds: number }> {
+  const res = await apiFetch('/api/credentials/ttl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ttlSeconds }) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to set TTL');
+  return data;
+}
+
+export async function rotateSigningKey(): Promise<{ oldKid: string; newKid: string; note: string }> {
+  const res = await apiFetch('/api/credentials/rotate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to rotate key');
+  return data;
+}

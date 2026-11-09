@@ -4,7 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { CredentialBroker, TokenVerifier } from '../credentialBroker.ts';
 import { ProtectedToolServer } from '../protectedTools.ts';
-import type { Segment } from '../types.ts';
+import type { Segment, ToolCall } from '../types.ts';
+import { AuditHashChain } from '../auditLog.ts';
+import { EventLedger } from '../ledger.ts';
+import { Vault } from '../vault.ts';
+import { PolicyEngine } from '../policyEngine.ts';
+import { createExecutionStack } from '../executionService.ts';
+import type { ScenarioDefinition } from '../scenarios.ts';
 
 export interface RegressionResult {
   passed: boolean;
@@ -73,4 +79,31 @@ export function signCustom(seed: Buffer, header: Record<string, unknown>, claims
 
 export function tmpDir(prefix = 'armora-reg-'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+export const JWT_LIKE = /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}/;
+
+/** Fully isolated stack: own audit chain, ledger, vault, broker, verifier, tool server, execution service. */
+export function makeServiceStack(opts: { engine?: PolicyEngine; isQuarantined?: (agentId: string) => boolean; dir?: string; key?: Buffer } = {}) {
+  const clock = { t: Date.now() };
+  const key = opts.key ?? crypto.randomBytes(32);
+  const audit = new AuditHashChain({ key, quiet: true, dir: opts.dir ?? null, anchorEvery: 5 });
+  const ledger = new EventLedger({ audit, now: () => clock.t, dir: opts.dir ?? null });
+  const vault = new Vault();
+  const seed = crypto.randomBytes(32);
+  const broker = new CredentialBroker({ seed, quiet: true, now: () => clock.t });
+  const stack = createExecutionStack({ ledger, vault, broker, engine: opts.engine, now: () => clock.t, isQuarantined: opts.isQuarantined });
+  return { clock, audit, ledger, vault, key, seed, ...stack };
+}
+export type ServiceStack = ReturnType<typeof makeServiceStack>;
+
+/** Plays a scenario's tool steps and its fooled agent call through the isolated service. */
+export async function playScenario(st: ServiceStack, scenario: ScenarioDefinition, mode: 'enforce' | 'shadow' | 'off' = 'enforce') {
+  const session = st.service.createSession({ agentId: `agent_${scenario.id}`, firewallMode: mode, scenarioId: scenario.id, segments: scenario.segments });
+  const outcomes = [];
+  for (const step of scenario.steps ?? []) {
+    if (step.kind === 'tool') outcomes.push(await st.service.execute({ sessionId: session.id, toolCall: structuredClone(step.toolCall) }));
+    if (step.kind === 'agent') outcomes.push(await st.service.execute({ sessionId: session.id, toolCall: structuredClone(scenario.simulatedFooledToolCall as ToolCall) }));
+  }
+  return { session, outcomes };
 }
